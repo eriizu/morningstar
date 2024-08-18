@@ -21,78 +21,27 @@ fn demo(tt: morningstar_model::TimeTable) {
     dbg!(tt.get_stops_served_on_day(&tomorrow));
 }
 
-fn main() {
-    let mut args = std::env::args();
-    let Some(av1) = args.nth(1) else {
-        return;
-    };
-
-    let now_naive: chrono::NaiveDateTime = {
-        let now = Local::now();
-        now.naive_local()
-    };
-    let tt = if av1 == "parse" {
-        let mut tt = morningstar_model::TimeTable::new();
-        use spinoff::{spinners, Spinner};
-        let mut spinner = Spinner::new(spinners::Dots, "Parsing", None);
-        let gtfs = gtfs_structures::Gtfs::new("../20240714_bus/IDFM-gtfs.zip").unwrap();
-        extractor::GtfsExtract::extract_gtfs_route(&mut tt, gtfs, "IDFM:C02298").unwrap();
-        spinner.success("Done parsing");
-        tt.get_journeys_for_day(&now_naive.date())
-            .for_each(|journey| {
-                dbg!(journey);
-            });
-
-        // TODO: this should be part of the model?
-        let serialized = ron::ser::to_string(&tt).unwrap();
-        let mut file = std::fs::File::create("patate.ron").unwrap();
-        std::io::Write::write(&mut file, serialized.as_bytes()).unwrap();
-        tt
-    } else if av1 == "read" {
-        let file = std::fs::File::open("patate.ron").unwrap();
-        let tt: morningstar_model::TimeTable = ron::de::from_reader(file).unwrap();
-        tt
-    } else {
-        morningstar_model::TimeTable::new()
-    };
-    demo(tt);
-    // gtfs_by_arg();
-
-    // let now = std::time::SystemTime::now();
-    // println!("{now:#?}");
-    // let cc = Local::now();
-    // println!("{cc:#?}");
-    // let dd: chrono::NaiveDateTime = cc.naive_local();
+use clap::Parser;
+#[derive(Parser)]
+struct Opt {
+    path_to_gtfs: String,
+    line_id: String,
 }
 
-fn gtfs_by_arg() {
-    for arg in std::env::args().skip(1) {
-        let mut tt = timetable::Timetable::new();
-        if tt.gtfs_extract(&arg).is_ok() {
-            tt.uniformise_stop_names();
-            use spinoff::{spinners, Spinner};
-            let mut spinner = Spinner::new(spinners::Dots, "Serializing", None);
-            if let Err(error) = tt.to_file("timetable.ron") {
-                spinner.fail("Serialisation failed");
-                eprintln!("while writing to file: {error}");
-            } else {
-                spinner.success("Done serialising");
-            }
-            tt.print_running_today();
-        } else {
-            use spinoff::{spinners, Spinner};
-            let mut spinner = Spinner::new(spinners::Dots, "Reading file {arg}", None);
-            let mut file = std::fs::File::open(arg).unwrap();
-            let mut buf = String::new();
-            std::io::Read::read_to_string(&mut file, &mut buf).unwrap();
-            spinner.success("Done reading");
-            let mut spinner = Spinner::new(spinners::Dots, "Parsing...", None);
-            let tt: timetable::Timetable = ron::from_str(&buf).unwrap();
-            spinner.success("Done parsing");
-            tt.print_running_today();
-            dbg!(tt.served_stops_today());
-            // tt.deduplicate_stops();
-            // dbg!(tt.served_stops_today());
-        }
-    }
+fn main() {
+    let opt = Opt::parse();
+    let mut tt = morningstar_model::TimeTable::new();
+
+    use spinoff::{spinners, Spinner};
+    let mut spinner = Spinner::new(spinners::Dots, "Parsing", None);
+
+    let gtfs = gtfs_structures::Gtfs::new(&opt.path_to_gtfs).unwrap();
+    extractor::GtfsExtract::extract_gtfs_route(&mut tt, gtfs, &opt.line_id).unwrap();
+
+    spinner.success("Done parsing");
+
+    let serialized = ron::ser::to_string(&tt).unwrap();
+    let mut file = std::fs::File::create("patate.ron").unwrap();
+    std::io::Write::write(&mut file, serialized.as_bytes()).unwrap();
+    demo(tt);
 }

@@ -12,7 +12,8 @@ serde = { version = "1.0.204", features = ["derive"] }
 spinoff = "0.8.0"
 structural-convert = "0.13.0"
 unidecode = "0.3.0"
-morningstar_model = { path = "/home/eriizu/Arena/morningstar_model" }
+morningstar_model = { path = "../morningstar_model" }
+clap = { version = "4.5.16", features = ["derive"] }
 
 [profile.release]
 opt-level = 3
