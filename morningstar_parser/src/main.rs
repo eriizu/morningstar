@@ -41,7 +41,7 @@ fn main() {
     spinner.success("Done parsing");
 
     let serialized = ron::ser::to_string(&tt).unwrap();
-    let mut file = std::fs::File::create("patate.ron").unwrap();
+    let mut file = std::fs::File::create("timetable.ron").unwrap();
     std::io::Write::write(&mut file, serialized.as_bytes()).unwrap();
     demo(tt);
 }
