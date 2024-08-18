@@ -29,12 +29,14 @@ pub fn run() {
     // let now = NaiveTime::from_hms_opt(15, 3, 00).unwrap();
 
     let tt = {
-        let file = if let Some(file_name) = &opt.file {
-            std::fs::File::open(file_name).unwrap()
+        let mut tt: morningstar_model::TimeTable = if let Some(file_name) = &opt.file {
+            let file = std::fs::File::open(file_name).unwrap();
+            ron::de::from_reader(file).unwrap()
         } else {
-            std::fs::File::open("patate.ron").unwrap()
+            let contents = include_str!("../timetable.ron");
+            // let file = std::fs::File::open("patate.ron").unwrap();
+            ron::de::from_str(contents).unwrap()
         };
-        let mut tt: morningstar_model::TimeTable = ron::de::from_reader(file).unwrap();
         tt.sort_journeys_and_stops();
         tt
     };
