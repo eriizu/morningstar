@@ -1,0 +1,24 @@
+[package]
+name = "morningstar_cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+morningstar_model = { path = "../morningstar_model" }
+chrono = { version = "0.4.38", default-features = false, features = ["alloc", "now", "serde", "std", "clock"] }
+clap = { version = "4.5.16", features = ["derive"] }
+inquire = "0.7.5"
+fuse-rust = "0.3.2"
+ron = "0.8.1"
+serde = { version = "1.0.204", features = ["derive"] }
+
+[profile.release]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = 'abort'
+incremental = false
+codegen-units = 1
+rpath = false

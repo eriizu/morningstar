@@ -1,0 +1,27 @@
+[package]
+name = "morningstar_parser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chrono = { version = "0.4.38", features = ["serde"] }
+gtfs-structures = "0.41.3"
+multimap = "0.10.0"
+ron = "0.8.1"
+serde = { version = "1.0.204", features = ["derive"] }
+spinoff = "0.8.0"
+structural-convert = "0.13.0"
+unidecode = "0.3.0"
+morningstar_model = { path = "/home/eriizu/Arena/morningstar_model" }
+
+[profile.release]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = 'abort'
+incremental = false
+codegen-units = 1
+rpath = false
+strip = true
