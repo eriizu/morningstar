@@ -27,20 +27,47 @@ struct Opt {
     line_id: String,
 }
 
-fn main() {
+fn main() -> std::process::ExitCode {
     let opt = Opt::parse();
     let mut tt = morningstar_model::TimeTable::new();
 
     use spinoff::{spinners, Spinner};
     let mut spinner = Spinner::new(spinners::Dots, "Parsing", None);
-
-    let gtfs = gtfs_structures::Gtfs::new(&opt.path_to_gtfs).unwrap();
-    extractor::GtfsExtract::extract_gtfs_route(&mut tt, gtfs, &opt.line_id).unwrap();
-
-    spinner.success("Done parsing");
-
-    let serialized = ron::ser::to_string(&tt).unwrap();
-    let mut file = std::fs::File::create("timetable.ron").unwrap();
-    std::io::Write::write(&mut file, serialized.as_bytes()).unwrap();
+    let gtfs = match gtfs_structures::Gtfs::new(&opt.path_to_gtfs) {
+        Ok(gtfs) => gtfs,
+        Err(err) => {
+            spinner.fail(&err.to_string());
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    spinner.success("Parsing Sucessful");
+    let mut spinner = Spinner::new(spinners::Dots, "Extracting to custom model", None);
+    if let Err(err) = extractor::GtfsExtract::extract_gtfs_route(&mut tt, gtfs, &opt.line_id) {
+        spinner.fail(&err.to_string());
+        return std::process::ExitCode::FAILURE;
+    }
+    spinner.update_text("Serialising");
+    let serialized = match ron::ser::to_string(&tt) {
+        Ok(val) => val,
+        Err(err) => {
+            spinner.fail(&err.to_string());
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    spinner.update_text("Creating file");
+    let mut file = match std::fs::File::create("timetable.ron") {
+        Ok(val) => val,
+        Err(err) => {
+            spinner.fail(&err.to_string());
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    spinner.update_text("Writing to file");
+    if let Err(err) = std::io::Write::write(&mut file, serialized.as_bytes()) {
+        spinner.fail(&err.to_string());
+        return std::process::ExitCode::FAILURE;
+    };
+    spinner.success("All done!");
     demo(tt);
+    std::process::ExitCode::SUCCESS
 }
