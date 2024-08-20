@@ -15,11 +15,7 @@ pub struct TimeTable {
 
 impl TimeTable {
     pub fn new() -> Self {
-        Self {
-            journeys: vec![],
-            excpetions: multimap::MultiMap::new(),
-            service_patterns: HashMap::new(),
-        }
+        TimeTable::default()
     }
 
     pub fn sort_journeys_and_stops(&mut self) {
@@ -103,8 +99,7 @@ impl TimeTable {
 
     pub fn get_stops_served_on_day<'a>(&'a self, day: &'a chrono::NaiveDate) -> HashSet<&'a str> {
         self.get_journeys_for_day(day)
-            .map(|journey| journey.stops.iter().map(|stop| stop.stop_name.as_str()))
-            .flatten()
+            .flat_map(|journey| journey.stops.iter().map(|stop| stop.stop_name.as_str()))
             .collect()
     }
 
@@ -130,6 +125,16 @@ impl TimeTable {
             Some(Exception::Added)
         } else {
             Some(Exception::Deleted)
+        }
+    }
+}
+
+impl Default for TimeTable {
+    fn default() -> Self {
+        Self {
+            journeys: vec![],
+            excpetions: multimap::MultiMap::new(),
+            service_patterns: HashMap::new(),
         }
     }
 }
@@ -190,23 +195,24 @@ mod test {
         service_pattern.weekdays = WeekdayFlags::WEEKENDS;
         tt.service_patterns
             .insert("we1".to_owned(), service_pattern.clone());
-        let mut wd_stops = Vec::new();
-        wd_stops.push(StopTime {
-            time: chrono::NaiveTime::from_hms_opt(14, 0, 0).unwrap(),
-            stop_name: "Église".to_owned(),
-        });
-        wd_stops.push(StopTime {
-            time: chrono::NaiveTime::from_hms_opt(14, 6, 0).unwrap(),
-            stop_name: "Marché".to_owned(),
-        });
-        wd_stops.push(StopTime {
-            time: chrono::NaiveTime::from_hms_opt(14, 9, 0).unwrap(),
-            stop_name: "Potato Factory".to_owned(),
-        });
-        wd_stops.push(StopTime {
-            time: chrono::NaiveTime::from_hms_opt(14, 15, 0).unwrap(),
-            stop_name: "Gare".to_owned(),
-        });
+        let mut wd_stops = vec![
+            StopTime {
+                time: chrono::NaiveTime::from_hms_opt(14, 0, 0).unwrap(),
+                stop_name: "Église".to_owned(),
+            },
+            StopTime {
+                time: chrono::NaiveTime::from_hms_opt(14, 6, 0).unwrap(),
+                stop_name: "Marché".to_owned(),
+            },
+            StopTime {
+                time: chrono::NaiveTime::from_hms_opt(14, 9, 0).unwrap(),
+                stop_name: "Potato Factory".to_owned(),
+            },
+            StopTime {
+                time: chrono::NaiveTime::from_hms_opt(14, 15, 0).unwrap(),
+                stop_name: "Gare".to_owned(),
+            },
+        ];
         tt.journeys.push(Journey {
             service_id: "wd1".to_owned(),
             stops: wd_stops.clone(),
@@ -219,23 +225,24 @@ mod test {
             service_id: "wd1".to_owned(),
             stops: wd_stops.clone(),
         });
-        let mut we_stops = Vec::new();
-        we_stops.push(StopTime {
-            time: chrono::NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
-            stop_name: "Église".to_owned(),
-        });
-        we_stops.push(StopTime {
-            time: chrono::NaiveTime::from_hms_opt(16, 6, 0).unwrap(),
-            stop_name: "Marché".to_owned(),
-        });
-        we_stops.push(StopTime {
-            time: chrono::NaiveTime::from_hms_opt(16, 9, 0).unwrap(),
-            stop_name: "Terrain d'airsoft".to_owned(),
-        });
-        we_stops.push(StopTime {
-            time: chrono::NaiveTime::from_hms_opt(16, 15, 0).unwrap(),
-            stop_name: "Gare".to_owned(),
-        });
+        let mut we_stops = vec![
+            StopTime {
+                time: chrono::NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
+                stop_name: "Église".to_owned(),
+            },
+            StopTime {
+                time: chrono::NaiveTime::from_hms_opt(16, 6, 0).unwrap(),
+                stop_name: "Marché".to_owned(),
+            },
+            StopTime {
+                time: chrono::NaiveTime::from_hms_opt(16, 9, 0).unwrap(),
+                stop_name: "Terrain d'airsoft".to_owned(),
+            },
+            StopTime {
+                time: chrono::NaiveTime::from_hms_opt(16, 15, 0).unwrap(),
+                stop_name: "Gare".to_owned(),
+            },
+        ];
         tt.journeys.push(Journey {
             service_id: "we1".to_owned(),
             stops: we_stops.clone(),

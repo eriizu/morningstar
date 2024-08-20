@@ -20,24 +20,6 @@ bitflags! {
     }
 }
 
-impl std::convert::From<&str> for WeekdayFlags {
-    fn from(value: &str) -> Self {
-        match value {
-            "LàV" => WeekdayFlags::WORKDAYS,
-            "LMJV" => {
-                WeekdayFlags::MONDAY
-                    | WeekdayFlags::TUESDAY
-                    | WeekdayFlags::THURSDAY
-                    | WeekdayFlags::FRIDAY
-            }
-            "S" => WeekdayFlags::SATURDAY,
-            "D" => WeekdayFlags::SUNDAY,
-            "Me" => WeekdayFlags::WEDNESDAY,
-            _ => WeekdayFlags::NEVER,
-        }
-    }
-}
-
 impl Display for WeekdayFlags {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if *self == Self::NEVER {
@@ -54,28 +36,12 @@ impl Display for WeekdayFlags {
             write!(f, "{char}")?;
             bit += 1;
         }
-        return writeln!(f, "");
+        Ok(())
     }
 }
 
 pub fn runs_on_date(date: &chrono::NaiveDate, flags: WeekdayFlags) -> bool {
-    // if !flags.contains(Runs::ALL_YEAR) {
-    //     let is_holiday = HOLIDAY_RANGES
-    //         .iter()
-    //         .find(|range| range.start < *date && *date < range.end)
-    //         .is_some();
-    //     if is_holiday != flags.contains(Runs::HOLIDAYS) {
-    //         return false;
-    //     }
-    // }
-    // let is_bank = BANK_HOLIDAYS
-    //     .iter()
-    //     .find(|bank_holiday| date == *bank_holiday)
-    //     .is_some();
-    // if is_bank {
-    //     return flags.contains(Runs::SUNDAY);
-    // }
-    return match date.weekday() {
+    match date.weekday() {
         chrono::Weekday::Mon if flags.contains(WeekdayFlags::MONDAY) => true,
         chrono::Weekday::Tue if flags.contains(WeekdayFlags::TUESDAY) => true,
         chrono::Weekday::Wed if flags.contains(WeekdayFlags::WEDNESDAY) => true,
@@ -84,31 +50,5 @@ pub fn runs_on_date(date: &chrono::NaiveDate, flags: WeekdayFlags) -> bool {
         chrono::Weekday::Sat if flags.contains(WeekdayFlags::SATURDAY) => true,
         chrono::Weekday::Sun if flags.contains(WeekdayFlags::SUNDAY) => true,
         _ => false,
-    };
-}
-
-pub fn runs_on(
-    weekday: &chrono::Weekday,
-    is_bank: bool,
-    is_holiday: bool,
-    flags: WeekdayFlags,
-) -> bool {
-    // if !flags.contains(Runs::ALL_YEAR) {
-    //     return (is_holiday && flags.contains(Runs::HOLIDAYS))
-    //         || (!is_holiday && flags.contains(Runs::OUTSIDE_HOLIDAYS));
-    // } else {
-    if is_bank && flags.contains(WeekdayFlags::SUNDAY) {
-        return true;
     }
-    return match weekday {
-        chrono::Weekday::Mon if flags.contains(WeekdayFlags::MONDAY) => true,
-        chrono::Weekday::Tue if flags.contains(WeekdayFlags::TUESDAY) => true,
-        chrono::Weekday::Wed if flags.contains(WeekdayFlags::WEDNESDAY) => true,
-        chrono::Weekday::Thu if flags.contains(WeekdayFlags::THURSDAY) => true,
-        chrono::Weekday::Fri if flags.contains(WeekdayFlags::FRIDAY) => true,
-        chrono::Weekday::Sat if flags.contains(WeekdayFlags::SATURDAY) => true,
-        chrono::Weekday::Sun if flags.contains(WeekdayFlags::SUNDAY) => true,
-        _ => false,
-    };
-    // }
 }
