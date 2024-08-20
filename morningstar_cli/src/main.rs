@@ -1,7 +1,3 @@
-fn main() {
-    run();
-}
-
 use chrono::prelude::*;
 use clap::Parser;
 
@@ -10,23 +6,19 @@ struct Opt {
     depart_from: Option<String>,
     // go_to: Option<String>,
     number_to_show: Option<usize>,
-    // #[arg(short, long, default_value_t = false)]
-    // long: bool,
+
     #[arg(short, long)]
     file: Option<String>,
 }
 
-pub fn run() {
+pub fn main() {
     let opt = Opt::parse();
 
-    let today_now: chrono::NaiveDateTime = {
+    let (today, now) = {
         let now = Local::now();
-        now.naive_local()
+        let now = now.naive_local();
+        (now.date(), now.time())
     };
-    let today = today_now.date();
-    let now = today_now.time();
-    // let today = NaiveDate::from_yo_opt(2024, 1).unwrap();
-    // let now = NaiveTime::from_hms_opt(15, 3, 00).unwrap();
 
     let tt = {
         let mut tt: morningstar_model::TimeTable = if let Some(file_name) = &opt.file {
@@ -34,17 +26,12 @@ pub fn run() {
             ron::de::from_reader(file).unwrap()
         } else {
             let contents = include_str!("../timetable.ron");
-            // let file = std::fs::File::open("patate.ron").unwrap();
             ron::de::from_str(contents).unwrap()
         };
         tt.sort_journeys_and_stops();
         tt
     };
-    let stops_served_today: Vec<_> = tt
-        .get_stops_served_on_day(&today)
-        .iter()
-        .map(|val| *val)
-        .collect();
+    let stops_served_today: Vec<_> = tt.get_stops_served_on_day(&today).iter().copied().collect();
     if stops_served_today.is_empty() {
         eprintln!("No stops served today");
     }
@@ -107,11 +94,6 @@ fn ask_for_deperture_stop(mut stops: Vec<&str>) -> Option<String> {
             None
         }
     }
-    // if let Ok(ans) = ans {
-    //     Some(ans.to_owned())
-    // } else {
-    //     None
-    // }
 }
 
 fn get_best_matching_stop_name(stop_name: &str, stops: Vec<&str>) -> Option<String> {
