@@ -1,5 +1,4 @@
 mod extractor;
-mod timetable;
 
 use chrono::prelude::*;
 fn demo(tt: morningstar_model::TimeTable) {

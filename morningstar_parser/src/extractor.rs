@@ -22,15 +22,10 @@ impl GtfsExtract for morningstar_model::TimeTable {
         if journeys.is_empty() {
             return Err("no trip was available".into());
         }
-        // let services: std::collections::HashSet<_> =
         journeys
             .iter()
             .map(|journey| journey.service_id.clone())
             .for_each(|service_id| extract_pattern_and_exceptions(self, &gtfs, service_id));
-        // .collect();
-        // for service_id in services {
-        //     extract_pattern_and_exceptions(self, &gtfs, service_id);
-        // }
         self.journeys = journeys;
         self.sort_journeys_and_stops();
         Ok(())
@@ -88,7 +83,7 @@ fn callendar_to_pattern(calendar: &gtfs_structures::Calendar) -> morningstar_mod
     if calendar.sunday {
         pattern.weekdays.set(WeekdayFlags::SUNDAY, true);
     }
-    return pattern;
+    pattern
 }
 
 fn trip_convert(trip: &gtfs_structures::Trip) -> Option<morningstar_model::Journey> {
