@@ -1,0 +1,2 @@
+extract_2245:
+    cargo run ../IDFM-gtfs.zip IDFM:C02298
