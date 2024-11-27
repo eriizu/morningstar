@@ -1,5 +1,85 @@
 mod extractor;
 
+use clap::Parser;
+#[derive(Parser)]
+struct Opt {
+    path_to_gtfs: String,
+    route_id: String,
+
+    #[arg(short = 'o')]
+    out: Option<std::path::PathBuf>,
+}
+
+fn main() -> std::process::ExitCode {
+    let opt = Opt::parse();
+    let mut parser = MorningstarPasrer::new();
+
+    match parser.run_with_opt(&opt) {
+        Ok(tt) => {
+            demo(tt);
+            std::process::ExitCode::SUCCESS
+        }
+        Err(err) => {
+            parser.spinner.fail(&err.to_string());
+            std::process::ExitCode::SUCCESS
+        }
+    }
+}
+
+struct MorningstarPasrer {
+    spinner: spinoff::Spinner,
+}
+
+impl MorningstarPasrer {
+    fn new() -> Self {
+        Self {
+            spinner: spinoff::Spinner::new(spinoff::spinners::Dots, "Parsing", None),
+        }
+    }
+
+    fn run_with_opt(
+        &mut self,
+        opt: &Opt,
+    ) -> Result<morningstar_model::TimeTable, Box<dyn std::error::Error>> {
+        let gtfs = self.initial_parsing(&opt.path_to_gtfs)?;
+        let tt = self.extract_route(gtfs, &opt.route_id)?;
+
+        self.spinner.update_text("Serialising");
+        let serialized = ron::ser::to_string(&tt)?;
+
+        self.spinner.update_text("Creating file");
+        let mut file =
+            std::fs::File::create(opt.out.as_ref().unwrap_or(&("timetable.ron".into())))?;
+
+        self.spinner.update_text("Writing to file");
+        std::io::Write::write(&mut file, serialized.as_bytes())?;
+        self.spinner.success("All done!");
+
+        Ok(tt)
+    }
+
+    fn initial_parsing(
+        &mut self,
+        path_to_gtfs: &str,
+    ) -> Result<gtfs_structures::Gtfs, Box<dyn std::error::Error>> {
+        let gtfs = gtfs_structures::Gtfs::new(path_to_gtfs)?;
+        self.spinner.success("Parsing Sucessful");
+        Ok(gtfs)
+    }
+
+    fn extract_route(
+        &mut self,
+        gtfs: gtfs_structures::Gtfs,
+        route_id: &str,
+    ) -> Result<morningstar_model::TimeTable, Box<dyn std::error::Error>> {
+        self.spinner =
+            spinoff::Spinner::new(spinoff::spinners::Dots, "Extracting to custom model", None);
+        let mut tt = morningstar_model::TimeTable::new();
+        extractor::GtfsExtract::extract_gtfs_route(&mut tt, gtfs, route_id)?;
+        Ok(tt)
+    }
+}
+
 use chrono::prelude::*;
 fn demo(tt: morningstar_model::TimeTable) {
     let now_naive: chrono::NaiveDateTime = {
@@ -18,56 +98,4 @@ fn demo(tt: morningstar_model::TimeTable) {
     let tomorrow = now_date.succ_opt().unwrap();
     dbg!(tt.get_stops_served_on_day(&now_date));
     dbg!(tt.get_stops_served_on_day(&tomorrow));
-}
-
-use clap::Parser;
-#[derive(Parser)]
-struct Opt {
-    path_to_gtfs: String,
-    line_id: String,
-}
-
-fn main() -> std::process::ExitCode {
-    let opt = Opt::parse();
-    let mut tt = morningstar_model::TimeTable::new();
-
-    use spinoff::{spinners, Spinner};
-    let mut spinner = Spinner::new(spinners::Dots, "Parsing", None);
-    let gtfs = match gtfs_structures::Gtfs::new(&opt.path_to_gtfs) {
-        Ok(gtfs) => gtfs,
-        Err(err) => {
-            spinner.fail(&err.to_string());
-            return std::process::ExitCode::FAILURE;
-        }
-    };
-    spinner.success("Parsing Sucessful");
-    let mut spinner = Spinner::new(spinners::Dots, "Extracting to custom model", None);
-    if let Err(err) = extractor::GtfsExtract::extract_gtfs_route(&mut tt, gtfs, &opt.line_id) {
-        spinner.fail(&err.to_string());
-        return std::process::ExitCode::FAILURE;
-    }
-    spinner.update_text("Serialising");
-    let serialized = match ron::ser::to_string(&tt) {
-        Ok(val) => val,
-        Err(err) => {
-            spinner.fail(&err.to_string());
-            return std::process::ExitCode::FAILURE;
-        }
-    };
-    spinner.update_text("Creating file");
-    let mut file = match std::fs::File::create("timetable.ron") {
-        Ok(val) => val,
-        Err(err) => {
-            spinner.fail(&err.to_string());
-            return std::process::ExitCode::FAILURE;
-        }
-    };
-    spinner.update_text("Writing to file");
-    if let Err(err) = std::io::Write::write(&mut file, serialized.as_bytes()) {
-        spinner.fail(&err.to_string());
-        return std::process::ExitCode::FAILURE;
-    };
-    spinner.success("All done!");
-    demo(tt);
-    std::process::ExitCode::SUCCESS
 }
