@@ -1,3 +1,4 @@
+use chrono::prelude::*;
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,7 @@ pub struct TimeTable {
     pub journeys: Vec<Journey>,
     pub excpetions: multimap::MultiMap<String, ServiceException>,
     pub service_patterns: HashMap<String, ServicePattern>,
+    pub extracted_on: chrono::DateTime<Utc>,
 }
 
 impl TimeTable {
@@ -131,10 +133,12 @@ impl TimeTable {
 
 impl Default for TimeTable {
     fn default() -> Self {
+        let now = Utc::now();
         Self {
             journeys: vec![],
             excpetions: multimap::MultiMap::new(),
             service_patterns: HashMap::new(),
+            extracted_on: now,
         }
     }
 }
