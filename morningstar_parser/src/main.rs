@@ -26,6 +26,13 @@ fn main() -> std::process::ExitCode {
     }
 }
 
+fn if_file_get_date(fpath: &str) -> Option<chrono::DateTime<Utc>> {
+    let fpath = <std::path::PathBuf as std::str::FromStr>::from_str(fpath).ok()?;
+    let meta = fpath.metadata().ok()?;
+    let date = chrono::DateTime::try_from(meta.created().ok()?).ok()?;
+    Some(date)
+}
+
 struct MorningstarPasrer {
     spinner: spinoff::Spinner,
 }
@@ -42,7 +49,15 @@ impl MorningstarPasrer {
         opt: &Opt,
     ) -> Result<morningstar_model::TimeTable, Box<dyn std::error::Error>> {
         let gtfs = self.initial_parsing(&opt.path_to_gtfs)?;
-        let tt = self.extract_route(gtfs, &opt.route_id)?;
+        let tt = {
+            let mut tt = self.extract_route(gtfs, &opt.route_id)?;
+            tt.extracted_from = opt.path_to_gtfs.to_owned();
+            if let Some(date) = if_file_get_date(&opt.path_to_gtfs) {
+                tt.extracted_on = date;
+            }
+            tt.extracted_line_id = opt.route_id.clone();
+            tt
+        };
 
         self.spinner.update_text("Serialising");
         let serialized = ron::ser::to_string(&tt)?;

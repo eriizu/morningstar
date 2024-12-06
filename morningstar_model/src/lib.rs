@@ -13,6 +13,8 @@ pub struct TimeTable {
     pub excpetions: multimap::MultiMap<String, ServiceException>,
     pub service_patterns: HashMap<String, ServicePattern>,
     pub extracted_on: chrono::DateTime<Utc>,
+    pub extracted_from: String,
+    pub extracted_line_id: String,
 }
 
 impl TimeTable {
@@ -139,6 +141,8 @@ impl Default for TimeTable {
             excpetions: multimap::MultiMap::new(),
             service_patterns: HashMap::new(),
             extracted_on: now,
+            extracted_from: String::new(),
+            extracted_line_id: String::new(),
         }
     }
 }

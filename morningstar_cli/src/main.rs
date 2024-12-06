@@ -9,6 +9,9 @@ struct Opt {
 
     #[arg(short, long)]
     file: Option<String>,
+
+    #[arg(short, long)]
+    verbose: bool,
 }
 
 pub fn main() {
@@ -31,6 +34,14 @@ pub fn main() {
         tt.sort_journeys_and_stops();
         tt
     };
+    if opt.verbose {
+        println!(
+            "source file or url: {}\ncreated on: {}\nline id: {}",
+            tt.extracted_from,
+            tt.extracted_on.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            tt.extracted_line_id
+        );
+    }
     let stops_served_today: Vec<_> = tt.get_stops_served_on_day(&today).iter().copied().collect();
     if stops_served_today.is_empty() {
         eprintln!("No stops served today");
