@@ -8,7 +8,7 @@ struct Opt {
     number_to_show: Option<usize>,
 
     #[arg(short, long)]
-    file: Option<String>,
+    file: std::path::PathBuf,
 
     #[arg(short, long)]
     verbose: bool,
@@ -24,13 +24,8 @@ pub fn main() {
     };
 
     let tt = {
-        let mut tt: morningstar_model::TimeTable = if let Some(file_name) = &opt.file {
-            let file = std::fs::File::open(file_name).unwrap();
-            ron::de::from_reader(file).unwrap()
-        } else {
-            let contents = include_str!("../timetable.ron");
-            ron::de::from_str(contents).unwrap()
-        };
+        let file = std::fs::File::open(&opt.file).unwrap();
+        let mut tt: morningstar_model::TimeTable = ron::de::from_reader(file).unwrap();
         tt.sort_journeys_and_stops();
         tt
     };
