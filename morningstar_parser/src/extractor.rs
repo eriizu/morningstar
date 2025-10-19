@@ -12,6 +12,7 @@ impl GtfsExtract for morningstar_model::TimeTable {
         gtfs: gtfs_structures::Gtfs,
         route_id: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.timezone = gtfs.agencies[0].timezone.clone();
         let journeys: Vec<_> = gtfs
             .trips
             .iter()
@@ -105,11 +106,13 @@ fn trip_convert(trip: &gtfs_structures::Trip) -> Option<morningstar_model::Journ
 
 fn stop_time_convert(stop_time: &gtfs_structures::StopTime) -> Option<morningstar_model::StopTime> {
     let stop_name = stop_time.stop.name.clone()?;
-    let seconds_from_midnight = stop_time.departure_time?;
+    let stop_id = stop_time.stop.id.clone();
+    let seconds_from_midnight = stop_time.arrival_time.or(stop_time.departure_time)?;
     let time_of_day =
         chrono::NaiveTime::from_num_seconds_from_midnight_opt(seconds_from_midnight, 0)?;
     Some(morningstar_model::StopTime {
         time: time_of_day,
-        stop_name: stop_name.clone(),
+        stop_name: stop_name,
+        stop_id,
     })
 }
