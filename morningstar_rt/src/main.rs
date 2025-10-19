@@ -103,19 +103,18 @@ impl StopTimeDto {
 
 impl std::fmt::Display for StopTimeDto {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{:02}:{:02}",
-            self.aimed_arrival.hour(),
-            self.aimed_arrival.minute()
-        )?;
+        let aimed = self.aimed_arrival.to_utc().with_timezone(&Local);
+        let expected = self
+            .expected_arrival
+            .map(|val| val.to_utc().with_timezone(&Local));
+        write!(f, "{:02}:{:02}", aimed.hour(), aimed.minute())?;
         if let Some(destination) = &self.destination {
             write!(f, " to {}", destination)?;
         }
         if let Some(stops) = &self.stops_to_destination {
             write!(f, " in {} stops", stops)?;
         }
-        if let Some(expected_arrival) = self.expected_arrival {
+        if let Some(expected_arrival) = expected {
             write!(
                 f,
                 " expected {:02}:{:02}",
@@ -175,11 +174,7 @@ impl MorningstarState {
             .timetable
             .get_day_stoptimes_and_destination_for_stop(&today, stop_name)
             .collect();
-        let stop_id = stoptimes_theorical
-            .last()
-            .unwrap()
-            .stop_id
-            .trim_start_matches("IDFM:");
+        let stop_id = stoptimes_theorical.last().unwrap().stop_id.as_str();
         let stoptimes_realtime = self.prim_client.get_next_busses(stop_id).await.unwrap();
         dbg!(&stoptimes_realtime);
         dbg!(&stoptimes_theorical);
@@ -194,9 +189,13 @@ impl MorningstarState {
     ) -> Vec<StopTimeDto> {
         let mut dtos = vec![];
         for stoptime in stoptimes_theorical {
-            let stoptime_rt_opt = stoptimes_realtime.iter().find(|realtime_stop| {
-                realtime_stop.aimed_arrival.naive_local().time() == stoptime.time
-            });
+            let time = self
+                .dt_maker
+                .make_datetime_with_time_and_tz(stoptime.time)
+                .to_utc();
+            let stoptime_rt_opt = stoptimes_realtime
+                .iter()
+                .find(|realtime_stop| realtime_stop.aimed_arrival.to_utc() == time);
             dtos.push(StopTimeDto::new_with_theorical_destination(
                 stoptime,
                 stoptime_rt_opt,

@@ -148,6 +148,8 @@ pub fn parse_bus_info(json_value: serde_json::Value) -> anyhow::Result<Vec<Realt
                         .unwrap_or("Unknown")
                         .to_string();
 
+                    let expected_arrival = call["ExpectedArrivalTime"].as_str().unwrap_or_default();
+                    println!("expected {}", expected_arrival);
                     let expected_arrival = call["ExpectedArrivalTime"]
                         .as_str()
                         .unwrap_or_default()
