@@ -9,6 +9,7 @@ pub use weekday_flags::WeekdayFlags;
 /// Journeys and stops
 #[derive(Serialize, Deserialize)]
 pub struct TimeTable {
+    pub timezone: String,
     pub journeys: Vec<Journey>,
     pub excpetions: multimap::MultiMap<String, ServiceException>,
     pub service_patterns: HashMap<String, ServicePattern>,
@@ -101,6 +102,33 @@ impl TimeTable {
         })
     }
 
+    pub fn get_day_stoptimes_and_destination_for_stop<'a>(
+        &'a self,
+        day: &'a chrono::NaiveDate,
+        stop_name: &'a str,
+    ) -> impl Iterator<Item = StopTimeWithDestination> + use<'a> {
+        self.get_journeys_for_day(day).flat_map(move |journey| {
+            let destination = journey
+                .stops
+                .last()
+                .map(|stop| stop.stop_name.as_str())
+                .expect("no journey to be empty");
+            let stops_len = journey.stops.len();
+            journey
+                .stops
+                .iter()
+                .enumerate()
+                .filter(move |(idx, stop)| *idx != stops_len && stop.stop_name == stop_name)
+                .map(move |(idx, stop)| StopTimeWithDestination {
+                    stop_name: stop.stop_name.clone(),
+                    stop_id: stop.stop_id.clone(),
+                    time: stop.time.clone(),
+                    destination: destination.to_string(),
+                    stops_to_destination: (stops_len - idx) as u32 - 1,
+                })
+        })
+    }
+
     pub fn get_stops_served_on_day<'a>(&'a self, day: &'a chrono::NaiveDate) -> HashSet<&'a str> {
         self.get_journeys_for_day(day)
             .flat_map(|journey| journey.stops.iter().map(|stop| stop.stop_name.as_str()))
@@ -137,6 +165,7 @@ impl Default for TimeTable {
     fn default() -> Self {
         let now = Utc::now();
         Self {
+            timezone: "Europe/Paris".to_string(),
             journeys: vec![],
             excpetions: multimap::MultiMap::new(),
             service_patterns: HashMap::new(),
@@ -159,6 +188,16 @@ pub struct Journey {
 pub struct StopTime {
     pub time: chrono::NaiveTime,
     pub stop_name: String,
+    pub stop_id: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StopTimeWithDestination {
+    pub time: chrono::NaiveTime,
+    pub stop_name: String,
+    pub stop_id: String,
+    pub destination: String,
+    pub stops_to_destination: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -207,18 +246,22 @@ mod test {
             StopTime {
                 time: chrono::NaiveTime::from_hms_opt(14, 0, 0).unwrap(),
                 stop_name: "Église".to_owned(),
+                stop_id: "".to_owned(),
             },
             StopTime {
                 time: chrono::NaiveTime::from_hms_opt(14, 6, 0).unwrap(),
                 stop_name: "Marché".to_owned(),
+                stop_id: "".to_owned(),
             },
             StopTime {
                 time: chrono::NaiveTime::from_hms_opt(14, 9, 0).unwrap(),
                 stop_name: "Potato Factory".to_owned(),
+                stop_id: "".to_owned(),
             },
             StopTime {
                 time: chrono::NaiveTime::from_hms_opt(14, 15, 0).unwrap(),
                 stop_name: "Gare".to_owned(),
+                stop_id: "".to_owned(),
             },
         ];
         tt.journeys.push(Journey {
@@ -237,18 +280,22 @@ mod test {
             StopTime {
                 time: chrono::NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
                 stop_name: "Église".to_owned(),
+                stop_id: "".to_owned(),
             },
             StopTime {
                 time: chrono::NaiveTime::from_hms_opt(16, 6, 0).unwrap(),
                 stop_name: "Marché".to_owned(),
+                stop_id: "".to_owned(),
             },
             StopTime {
                 time: chrono::NaiveTime::from_hms_opt(16, 9, 0).unwrap(),
                 stop_name: "Terrain d'airsoft".to_owned(),
+                stop_id: "".to_owned(),
             },
             StopTime {
                 time: chrono::NaiveTime::from_hms_opt(16, 15, 0).unwrap(),
                 stop_name: "Gare".to_owned(),
+                stop_id: "".to_owned(),
             },
         ];
         tt.journeys.push(Journey {
