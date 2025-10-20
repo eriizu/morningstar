@@ -1,6 +1,6 @@
 use chrono::prelude::*;
 use morningstar_model::{StopTime, StopTimeWithDestination, TimeTable};
-use morningstar_rt::{IdfmPrimClient, RealtimeStop, RealtimeStopStatus};
+use morningstar_rt::{IdfmPrimClient, RealtimeStop, RealtimeStopStatus, mock};
 
 /// Makes `chrono::DateTime` from chrono::NaiveTime re-using a common timezone and basedate. We
 /// need it for mass-producing absolute bus stoptimes that can be compared to the realtime date
@@ -147,11 +147,9 @@ impl MorningstarState {
     }
 
     async fn next_stops_fake(&self) {
-        let generator = FakeGenerator::default();
+        let generator = mock::FakeGenerator::default();
         let stoptimes_realtime = generator.fake_realtime_list();
         let stoptimes_theorical = generator.fake_theorical_with_destination_list();
-        dbg!(&stoptimes_realtime);
-        dbg!(&stoptimes_theorical);
         let dtos = self.mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical);
         dtos.iter().for_each(|dto| println!("{dto}"));
     }
@@ -167,19 +165,21 @@ impl MorningstarState {
         }
     }
 
-    async fn next_stops(&self) {
+    async fn next_stops_a(&self, stop_name: &str) {
         let today = chrono::Local::now().naive_local().date();
-        let stop_name = Self::choose_stop(&self.timetable);
         let stoptimes_theorical: Vec<_> = self
             .timetable
             .get_day_stoptimes_and_destination_for_stop(&today, stop_name)
             .collect();
         let stop_id = stoptimes_theorical.last().unwrap().stop_id.as_str();
         let stoptimes_realtime = self.prim_client.get_next_busses(stop_id).await.unwrap();
-        dbg!(&stoptimes_realtime);
-        dbg!(&stoptimes_theorical);
         let dtos = self.mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical);
         dtos.iter().for_each(|dto| println!("{dto}"));
+    }
+
+    async fn next_stops(&self) {
+        let stop_name = Self::choose_stop(&self.timetable);
+        self.next_stops_a(&stop_name).await;
     }
 
     fn mk_stoptime_dto_vec(
@@ -203,33 +203,6 @@ impl MorningstarState {
             ));
         }
         dtos
-    }
-
-    async fn print_stoptimes(
-        stoptimes_realtime: &Vec<RealtimeStop>,
-        stoptimes_theorical: &Vec<&StopTimeWithDestination>,
-    ) {
-        let mut dtos = vec![];
-        // TODO: take timezone from timetable
-        let dt_maker = DatetimeMaker::new("Europe/Paris", Utc::now().fixed_offset()).unwrap();
-        for stoptime in stoptimes_theorical {
-            let Some(stoptime_rt) = stoptimes_realtime.iter().find(|realtime_stop| {
-                realtime_stop.aimed_arrival.naive_local().time() == stoptime.time
-            }) else {
-                dtos.push(StopTimeDto::new_with_theorical_destination(
-                    stoptime, None, &dt_maker,
-                ));
-                println!("{:02}:{:02}", stoptime.time.hour(), stoptime.time.minute());
-                continue;
-            };
-            dtos.push(StopTimeDto::new_with_theorical_destination(
-                stoptime,
-                Some(stoptime_rt),
-                &dt_maker,
-            ));
-            println!("{}", stoptime_rt);
-        }
-        serde_json::ser::to_writer_pretty(std::io::stdout(), &dtos).unwrap();
     }
 }
 
@@ -255,147 +228,4 @@ async fn main() -> anyhow::Result<()> {
     let state = MorningstarState::new(timetable, prim_client);
     state.next_stops().await;
     Ok(())
-}
-
-/// Generator to use for testing, that produces realtime and theorical data from a specific date
-/// and time.
-struct FakeGenerator {
-    base_date: chrono::DateTime<FixedOffset>,
-}
-
-impl Default for FakeGenerator {
-    fn default() -> Self {
-        let tz = chrono_tz::Europe::Paris;
-        let now = tz
-            .from_utc_datetime(
-                &Utc::now()
-                    .with_second(0)
-                    .unwrap()
-                    .with_nanosecond(0)
-                    .unwrap()
-                    .naive_utc(),
-            )
-            .fixed_offset();
-
-        Self { base_date: now }
-    }
-}
-
-impl FakeGenerator {
-    /// Generate a realtime stop time using a minute offset from the base date.
-    pub fn create_realtime_stop(
-        &self,
-        minutes_offset: i64,
-        destination: &str,
-        delay_minutes: i64,
-        status: RealtimeStopStatus,
-    ) -> RealtimeStop {
-        let aimed = self.base_date + chrono::Duration::minutes(minutes_offset);
-        let expected = aimed + chrono::Duration::minutes(delay_minutes);
-
-        RealtimeStop {
-            expected_arrival: expected,
-            aimed_arrival: aimed,
-            destination: destination.to_string(),
-            status,
-        }
-    }
-
-    /// Generate a theorical stop time using a minute offset from the base date.
-    pub fn create_stop_time(
-        &self,
-        minutes_offset: i64,
-        stop_name: &str,
-        stop_id: &str,
-    ) -> StopTime {
-        let time_with_offset = self.base_date + chrono::Duration::minutes(minutes_offset);
-
-        StopTime {
-            time: time_with_offset.time(),
-            stop_name: stop_name.to_string(),
-            stop_id: stop_id.to_string(),
-        }
-    }
-
-    /// Generate a theorical stop time using a minute offset from the base date.
-    pub fn create_stop_time_with_destination(
-        &self,
-        minutes_offset: i64,
-        stop_name: &str,
-        stop_id: &str,
-        destination: &str,
-    ) -> StopTimeWithDestination {
-        let time_with_offset = self.base_date + chrono::Duration::minutes(minutes_offset);
-
-        StopTimeWithDestination {
-            time: time_with_offset.time(),
-            stop_name: stop_name.to_string(),
-            stop_id: stop_id.to_string(),
-            destination: destination.to_string(),
-            stops_to_destination: 3,
-        }
-    }
-
-    /// Sample a list of fake theorical stops.
-    fn fake_theorical_with_destination_list(&self) -> Vec<StopTimeWithDestination> {
-        vec![
-            self.create_stop_time_with_destination(
-                -38,
-                "Parc du Bel-Air",
-                "IDFM:123",
-                "Gare de Bussy-St-Georges",
-            ),
-            self.create_stop_time_with_destination(
-                -8,
-                "Parc du Bel-Air",
-                "IDFM:123",
-                "Gare de Bussy-St-Georges",
-            ),
-            self.create_stop_time_with_destination(
-                0,
-                "Parc du Bel-Air",
-                "IDFM:123",
-                "Gare de Bussy-St-Georges",
-            ),
-            self.create_stop_time_with_destination(
-                10,
-                "Parc du Bel-Air",
-                "IDFM:123",
-                "Gare de Bussy-St-Georges",
-            ),
-            self.create_stop_time_with_destination(
-                20,
-                "Parc du Bel-Air",
-                "IDFM:123",
-                "Gare de Bussy-St-Georges",
-            ),
-            self.create_stop_time_with_destination(
-                40,
-                "Parc du Bel-Air",
-                "IDFM:123",
-                "Gare de Bussy-St-Georges",
-            ),
-        ]
-    }
-
-    /// Sample a list of fake theorical stops.
-    fn fake_theorical_list(&self) -> Vec<morningstar_model::StopTime> {
-        vec![
-            self.create_stop_time(-38, "Parc du Bel-Air", "IDFM:123"),
-            self.create_stop_time(-8, "Parc du Bel-Air", "IDFM:123"),
-            self.create_stop_time(0, "Parc du Bel-Air", "IDFM:123"),
-            self.create_stop_time(10, "Parc du Bel-Air", "IDFM:123"),
-            self.create_stop_time(20, "Parc du Bel-Air", "IDFM:123"),
-            self.create_stop_time(40, "Parc du Bel-Air", "IDFM:123"),
-        ]
-    }
-
-    /// Sample a list of fake realtime stops.
-    pub fn fake_realtime_list(&self) -> Vec<RealtimeStop> {
-        vec![
-            self.create_realtime_stop(0, "Gare de Bussy", 2, RealtimeStopStatus::Late(2)),
-            self.create_realtime_stop(10, "Gare de Bussy", -1, RealtimeStopStatus::Early(1)),
-            self.create_realtime_stop(20, "Gare de Bussy", 0, RealtimeStopStatus::OnTime),
-        ]
-    }
 }

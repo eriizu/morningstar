@@ -1,3 +1,4 @@
+pub mod mock;
 mod prim;
 use chrono::{DateTime, Timelike, Utc, prelude::*};
 pub use prim::{IdfmPrimClient, StopId};
