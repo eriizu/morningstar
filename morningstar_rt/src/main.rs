@@ -165,7 +165,7 @@ impl MorningstarState {
         }
     }
 
-    async fn next_stops_a(&self, stop_name: &str) {
+    async fn next_stops_a(&self, stop_name: &str) -> Vec<StopTimeDto> {
         let today = chrono::Local::now().naive_local().date();
         let stoptimes_theorical: Vec<_> = self
             .timetable
@@ -174,7 +174,8 @@ impl MorningstarState {
         let stop_id = stoptimes_theorical.last().unwrap().stop_id.as_str();
         let stoptimes_realtime = self.prim_client.get_next_busses(stop_id).await.unwrap();
         let dtos = self.mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical);
-        dtos.iter().for_each(|dto| println!("{dto}"));
+        // dtos.iter().for_each(|dto| println!("{dto}"));
+        return dtos;
     }
 
     async fn next_stops(&self) {
@@ -227,5 +228,47 @@ async fn main() -> anyhow::Result<()> {
     };
     let state = MorningstarState::new(timetable, prim_client);
     state.next_stops().await;
+    web_server(state).await?;
     Ok(())
+}
+
+#[poem::handler]
+fn index() -> &'static str {
+    "hello"
+}
+
+use poem::web::{Data, Json, Path};
+
+#[poem::handler]
+fn served_stops(Data(state): Data<&std::sync::Arc<MorningstarState>>) -> Json<Vec<String>> {
+    let today = Local::now().date_naive();
+    Json(
+        state
+            .timetable
+            .get_stops_served_on_day(&today)
+            .iter()
+            .map(|val| val.to_string())
+            .collect(),
+    )
+}
+
+#[poem::handler]
+async fn hdl_stoptimes(
+    Data(state): Data<&std::sync::Arc<MorningstarState>>,
+    Path(stop_name): Path<String>,
+) -> Json<Vec<StopTimeDto>> {
+    let stoptimes = state.next_stops_a(&stop_name).await;
+    Json(stoptimes)
+}
+
+async fn web_server(state: MorningstarState) -> anyhow::Result<()> {
+    use poem::{EndpointExt, Route, Server, get, listener::TcpListener};
+    let routes = Route::new()
+        .at("/", get(index))
+        .at("/served_today", get(served_stops))
+        .at("/stop/:name", get(hdl_stoptimes))
+        .data(std::sync::Arc::new(state));
+    Ok(Server::new(TcpListener::bind("0.0.0.0:3000"))
+        .run(routes)
+        .await?)
 }

@@ -17,4 +17,5 @@ morningstar_parser = { path = "../morningstar_parser" }
 clap = { version = "4.5.49", features = ["derive"] }
 ron = "0.11.0"
 chrono-tz = "0.10.4"
+poem = "3.1.12"
 
