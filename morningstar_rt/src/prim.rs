@@ -5,7 +5,7 @@ const PRIM_STOP_ID_PREFIX: &'static str = "STIF:StopPoint:Q:";
 const PRIM_STOP_ID_SUFFIX: &'static str = ":";
 const GTFS_STOP_ID_PREFIX: &'static str = "IDFM:";
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct StopId(String);
 
 impl std::str::FromStr for StopId {
@@ -92,6 +92,9 @@ pub struct IdfmPrimClient {
     api_key: String,
     api_base_url: &'static str,
     api_client: reqwest::Client,
+    stop_monitoring_cache: std::sync::RwLock<
+        std::collections::HashMap<StopId, (chrono::DateTime<Utc>, Vec<RealtimeStop>)>,
+    >,
 }
 
 impl IdfmPrimClient {
@@ -100,13 +103,45 @@ impl IdfmPrimClient {
             api_key,
             api_base_url: "https://prim.iledefrance-mobilites.fr/marketplace",
             api_client: reqwest::Client::new(),
+            stop_monitoring_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
     }
 
     pub async fn get_next_busses(&self, stop_id: &str) -> anyhow::Result<Vec<RealtimeStop>> {
+        let stop_id = stop_id.parse::<StopId>()?;
+        let cached = std::collections::HashMap::get(
+            &std::sync::RwLock::read(&self.stop_monitoring_cache).unwrap(),
+            &stop_id,
+        )
+        .and_then(|(date, stops)| {
+            let delta = Utc::now() - *date;
+            if delta.num_seconds() <= 20 {
+                println!(
+                    "INFO: used {} seconds old cache for {}",
+                    delta.num_seconds(),
+                    stop_id.bare()
+                );
+                Some(stops.clone())
+            } else {
+                None
+            }
+        });
+        if let Some(cached) = cached {
+            return Ok(cached);
+        }
+        let response_body = self.api_rq_stop_monitoring(&stop_id).await?;
+        let buses = parse_bus_info(response_body)?;
+        let mut cache = std::sync::RwLock::write(&self.stop_monitoring_cache).unwrap();
+        cache.insert(stop_id, (Utc::now(), buses.clone()));
+        Ok(buses)
+    }
+
+    pub async fn api_rq_stop_monitoring(
+        &self,
+        stop_id: &StopId,
+    ) -> anyhow::Result<serde_json::Value> {
         let mut url = String::from(self.api_base_url);
         url.push_str("/stop-monitoring");
-        let stop_id = stop_id.parse::<StopId>()?;
         let res = self
             .api_client
             .get(url)
@@ -124,9 +159,7 @@ impl IdfmPrimClient {
                 body
             ));
         }
-        let root: serde_json::Value = serde_json::from_str(&body)?;
-
-        parse_bus_info(root)
+        Ok(serde_json::from_str(&body)?)
     }
 }
 

@@ -3,7 +3,7 @@ mod prim;
 use chrono::{DateTime, Timelike, Utc, prelude::*};
 pub use prim::{IdfmPrimClient, StopId};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RealtimeStopStatus {
     Early(i64),
     OnTime,
@@ -24,7 +24,7 @@ impl std::fmt::Display for RealtimeStopStatus {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RealtimeStop {
     pub expected_arrival: DateTime<chrono::FixedOffset>,
     pub aimed_arrival: DateTime<chrono::FixedOffset>,
