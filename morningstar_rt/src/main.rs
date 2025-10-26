@@ -22,9 +22,17 @@ impl DatetimeMaker {
 
     /// Generate a `chrono::DateTime` using the `chrono::NaiveTime` provided and the contained
     /// timezone and base date.
-    fn make_datetime_with_time_and_tz(&self, time: NaiveTime) -> chrono::DateTime<FixedOffset> {
+    fn make_datetime_with_time_and_tz(
+        &self,
+        time: NaiveTime,
+    ) -> Option<chrono::DateTime<FixedOffset>> {
         let date = self.tz.from_utc_datetime(&self.base_date.naive_utc());
-        date.with_time(time).unwrap().fixed_offset()
+        use chrono::LocalResult;
+        match date.with_time(time) {
+            LocalResult::None => None,
+            LocalResult::Single(val) => Some(val.fixed_offset()),
+            LocalResult::Ambiguous(earliest, _) => Some(earliest.fixed_offset()),
+        }
     }
 }
 
@@ -51,9 +59,8 @@ impl StopTimeDto {
     /// Make a `StopTimeDto` from theorical and realtime data (when avail.) using a `DatetimeMaker`
     /// for absolute call datetimes.
     fn new_with_rt_destination(
-        theorical: &StopTime,
         rt: Option<&morningstar_rt::RealtimeStop>,
-        dt_maker: &DatetimeMaker,
+        theorical_arrival: DateTime<FixedOffset>,
     ) -> Self {
         if let Some(rt) = rt {
             Self {
@@ -66,7 +73,7 @@ impl StopTimeDto {
         } else {
             Self {
                 expected_arrival: None,
-                aimed_arrival: dt_maker.make_datetime_with_time_and_tz(theorical.time),
+                aimed_arrival: theorical_arrival,
                 destination: None,
                 status: None,
                 stops_to_destination: None,
@@ -79,7 +86,7 @@ impl StopTimeDto {
     fn new_with_theorical_destination(
         theorical: &StopTimeWithDestination,
         rt: Option<&morningstar_rt::RealtimeStop>,
-        dt_maker: &DatetimeMaker,
+        theorical_arrival: DateTime<FixedOffset>,
     ) -> Self {
         if let Some(rt) = rt {
             Self {
@@ -92,7 +99,7 @@ impl StopTimeDto {
         } else {
             Self {
                 expected_arrival: None,
-                aimed_arrival: dt_maker.make_datetime_with_time_and_tz(theorical.time),
+                aimed_arrival: theorical_arrival,
                 destination: Some(theorical.destination.clone()),
                 status: None,
                 stops_to_destination: Some(theorical.stops_to_destination),
@@ -129,8 +136,10 @@ impl std::fmt::Display for StopTimeDto {
     }
 }
 
+use tokio::sync::RwLock;
+
 struct MorningstarState {
-    timetable: TimeTable,
+    timetable: RwLock<TimeTable>,
     prim_client: IdfmPrimClient,
     dt_maker: DatetimeMaker,
 }
@@ -142,7 +151,7 @@ impl MorningstarState {
         Self {
             dt_maker,
             prim_client,
-            timetable,
+            timetable: RwLock::new(timetable),
         }
     }
 
@@ -167,10 +176,12 @@ impl MorningstarState {
 
     async fn next_stops_a(&self, stop_name: &str) -> Vec<StopTimeDto> {
         let today = chrono::Local::now().naive_local().date();
-        let stoptimes_theorical: Vec<_> = self
-            .timetable
-            .get_day_stoptimes_and_destination_for_stop(&today, stop_name)
-            .collect();
+        let stoptimes_theorical: Vec<_> = {
+            let timetable = self.timetable.read().await;
+            timetable
+                .get_day_stoptimes_and_destination_for_stop(&today, stop_name)
+                .collect()
+        };
         let stop_id = stoptimes_theorical.last().unwrap().stop_id.as_str();
         let stoptimes_realtime = self.prim_client.get_next_busses(stop_id).await.unwrap();
         let dtos = self.mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical);
@@ -179,7 +190,10 @@ impl MorningstarState {
     }
 
     async fn next_stops(&self) {
-        let stop_name = Self::choose_stop(&self.timetable);
+        let stop_name = {
+            let timetable = self.timetable.read().await;
+            Self::choose_stop(&timetable)
+        };
         self.next_stops_a(&stop_name).await;
     }
 
@@ -190,17 +204,20 @@ impl MorningstarState {
     ) -> Vec<StopTimeDto> {
         let mut dtos = vec![];
         for stoptime in stoptimes_theorical {
-            let time = self
-                .dt_maker
-                .make_datetime_with_time_and_tz(stoptime.time)
-                .to_utc();
+            let Some(time) = self.dt_maker.make_datetime_with_time_and_tz(stoptime.time) else {
+                eprintln!(
+                    "stop time {} doesn't exist in destination timezone.",
+                    stoptime.time
+                );
+                continue;
+            };
             let stoptime_rt_opt = stoptimes_realtime
                 .iter()
-                .find(|realtime_stop| realtime_stop.aimed_arrival.to_utc() == time);
+                .find(|realtime_stop| realtime_stop.aimed_arrival.to_utc() == time.to_utc());
             dtos.push(StopTimeDto::new_with_theorical_destination(
                 stoptime,
                 stoptime_rt_opt,
-                &self.dt_maker,
+                time,
             ));
         }
         dtos
@@ -226,9 +243,13 @@ async fn main() -> anyhow::Result<()> {
         tt.sort_journeys_and_stops();
         tt
     };
-    let state = MorningstarState::new(timetable, prim_client);
+    let state = std::sync::Arc::new(MorningstarState::new(timetable, prim_client));
     state.next_stops().await;
-    web_server(state).await?;
+    let periodic_task_handle = tokio::spawn(periodic_task_example());
+    let web_server_handle = tokio::spawn(web_server(state.clone()));
+    web_server_handle.await.unwrap().unwrap();
+    periodic_task_handle.await.unwrap();
+    timetable_update_on_expiry(state, &opt.file).await;
     Ok(())
 }
 
@@ -240,11 +261,11 @@ fn index() -> &'static str {
 use poem::web::{Data, Json, Path};
 
 #[poem::handler]
-fn served_stops(Data(state): Data<&std::sync::Arc<MorningstarState>>) -> Json<Vec<String>> {
+async fn served_stops(Data(state): Data<&std::sync::Arc<MorningstarState>>) -> Json<Vec<String>> {
     let today = Local::now().date_naive();
+    let timetable = state.timetable.read().await;
     Json(
-        state
-            .timetable
+        timetable
             .get_stops_served_on_day(&today)
             .iter()
             .map(|val| val.to_string())
@@ -261,14 +282,91 @@ async fn hdl_stoptimes(
     Json(stoptimes)
 }
 
-async fn web_server(state: MorningstarState) -> anyhow::Result<()> {
+async fn web_server(state: std::sync::Arc<MorningstarState>) -> anyhow::Result<()> {
     use poem::{EndpointExt, Route, Server, get, listener::TcpListener};
     let routes = Route::new()
         .at("/", get(index))
         .at("/served_today", get(served_stops))
         .at("/stop/:name", get(hdl_stoptimes))
-        .data(std::sync::Arc::new(state));
+        .data(state);
     Ok(Server::new(TcpListener::bind("0.0.0.0:3000"))
         .run(routes)
         .await?)
+}
+
+async fn timetable_update_on_expiry(
+    state: std::sync::Arc<MorningstarState>,
+    file_path: &std::path::Path,
+) {
+    use chrono::Duration as ChronoDuration;
+    let deadline_duration = ChronoDuration::days(7);
+    loop {
+        let (mut extracted_on, extracted_line_id, extracted_from) = {
+            let timetable = state.timetable.read().await;
+            (
+                timetable.extracted_on.clone(),
+                timetable.extracted_line_id.clone(),
+                timetable.extracted_from.clone(),
+            )
+        };
+        if Utc::now() >= extracted_on + deadline_duration {
+            let opt = morningstar_parser::Opt {
+                path_to_gtfs: extracted_from,
+                route_id: extracted_line_id,
+                out: Some(file_path.to_path_buf()),
+            };
+            if let Ok(Some(val)) = timetable_parse(opt).await {
+                extracted_on = val.extracted_on;
+                *state.timetable.write().await = val;
+            }
+        }
+        let deadline_instant = mk_deadline_instant_in_days(extracted_on, deadline_duration);
+        tokio::time::sleep_until(deadline_instant).await;
+    }
+}
+
+async fn timetable_parse(
+    opt: morningstar_parser::Opt,
+) -> Result<Option<TimeTable>, tokio::task::JoinError> {
+    tokio::task::spawn_blocking(move || {
+        let mut parser = morningstar_parser::MorningstarPasrer::new();
+        println!("STARTING PARSING (i will eat a lot of your ram am sorry (,,>﹏<,,))");
+        println!("{}", opt);
+        match parser.run_with_opt(&opt) {
+            Ok(timetable) => Some(timetable),
+            Err(err) => {
+                eprintln!("timetable parsing: {}", err);
+                None
+            }
+        }
+    })
+    .await
+}
+
+/// Makes an monotonic Instant in order to wait for a deadline that is `duration` after `base_date`.
+/// That instant can be used with `tokio::time::sleep_until` to wait for that deadline.
+fn mk_deadline_instant_in_days(
+    base_date: DateTime<Utc>,
+    duration: chrono::Duration,
+) -> tokio::time::Instant {
+    use tokio::time::Duration;
+    let deadline = base_date + duration;
+    let now = Utc::now();
+    let remaining = (deadline - now)
+        .to_std()
+        .unwrap_or_else(|_| Duration::from_secs(0));
+    tokio::time::Instant::now() + remaining
+}
+
+// https://www.data.gouv.fr/fr/datasets/r/f9fff5b1-f9e4-4ec2-b8b3-8ad7005d869c IDFM:C02298
+
+async fn periodic_task_example() {
+    use tokio::time::{Duration, MissedTickBehavior};
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+
+    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    loop {
+        interval.tick().await;
+        println!("hey");
+    }
 }

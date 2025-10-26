@@ -4,11 +4,23 @@ use chrono::prelude::*;
 use clap::Parser;
 #[derive(Parser)]
 pub struct Opt {
-    path_to_gtfs: String,
-    route_id: String,
+    pub path_to_gtfs: String,
+    pub route_id: String,
 
     #[arg(short = 'o')]
-    out: Option<std::path::PathBuf>,
+    pub out: Option<std::path::PathBuf>,
+}
+
+impl std::fmt::Display for Opt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "== Morning Star Parsing Options ==")?;
+        writeln!(f, "GTFS path: {}", self.path_to_gtfs)?;
+        writeln!(f, "route ID: {}", self.route_id)?;
+        match &self.out {
+            Some(path) => writeln!(f, "output to file: {}", path.display()),
+            None => writeln!(f, "not outputing to file"),
+        }
+    }
 }
 
 pub fn if_file_get_date(fpath: &str) -> Option<chrono::DateTime<Utc>> {
