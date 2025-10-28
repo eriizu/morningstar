@@ -245,11 +245,11 @@ async fn main() -> anyhow::Result<()> {
     };
     let state = std::sync::Arc::new(MorningstarState::new(timetable, prim_client));
     state.next_stops().await;
-    let periodic_task_handle = tokio::spawn(periodic_task_example());
     let web_server_handle = tokio::spawn(web_server(state.clone()));
+    let file_path = opt.file.to_path_buf();
+    let timetable_update_handle = tokio::spawn(timetable_update_on_expiry(state, file_path));
     web_server_handle.await.unwrap().unwrap();
-    periodic_task_handle.await.unwrap();
-    timetable_update_on_expiry(state, &opt.file).await;
+    timetable_update_handle.await.unwrap();
     Ok(())
 }
 
@@ -296,10 +296,10 @@ async fn web_server(state: std::sync::Arc<MorningstarState>) -> anyhow::Result<(
 
 async fn timetable_update_on_expiry(
     state: std::sync::Arc<MorningstarState>,
-    file_path: &std::path::Path,
+    file_path: std::path::PathBuf,
 ) {
     use chrono::Duration as ChronoDuration;
-    let deadline_duration = ChronoDuration::days(7);
+    let deadline_duration = ChronoDuration::minutes(5);
     loop {
         let (mut extracted_on, extracted_line_id, extracted_from) = {
             let timetable = state.timetable.read().await;
@@ -310,12 +310,14 @@ async fn timetable_update_on_expiry(
             )
         };
         if Utc::now() >= extracted_on + deadline_duration {
-            let opt = morningstar_parser::Opt {
-                path_to_gtfs: extracted_from,
+            let parser_invoker = morningstar_rt::parser_invoker::Invoker {
+                gtfs_source: extracted_from,
                 route_id: extracted_line_id,
-                out: Some(file_path.to_path_buf()),
+                timetable_dest: file_path.to_path_buf(),
             };
-            if let Ok(Some(val)) = timetable_parse(opt).await {
+            println!("STARTING PARSING (i will eat a lot of your ram am sorry (,,>﹏<,,))");
+            println!("{}", parser_invoker);
+            if let Ok(val) = parser_invoker.run().await {
                 extracted_on = val.extracted_on;
                 *state.timetable.write().await = val;
             }
@@ -323,24 +325,6 @@ async fn timetable_update_on_expiry(
         let deadline_instant = mk_deadline_instant_in_days(extracted_on, deadline_duration);
         tokio::time::sleep_until(deadline_instant).await;
     }
-}
-
-async fn timetable_parse(
-    opt: morningstar_parser::Opt,
-) -> Result<Option<TimeTable>, tokio::task::JoinError> {
-    tokio::task::spawn_blocking(move || {
-        let mut parser = morningstar_parser::MorningstarPasrer::new();
-        println!("STARTING PARSING (i will eat a lot of your ram am sorry (,,>﹏<,,))");
-        println!("{}", opt);
-        match parser.run_with_opt(&opt) {
-            Ok(timetable) => Some(timetable),
-            Err(err) => {
-                eprintln!("timetable parsing: {}", err);
-                None
-            }
-        }
-    })
-    .await
 }
 
 /// Makes an monotonic Instant in order to wait for a deadline that is `duration` after `base_date`.
@@ -356,17 +340,4 @@ fn mk_deadline_instant_in_days(
         .to_std()
         .unwrap_or_else(|_| Duration::from_secs(0));
     tokio::time::Instant::now() + remaining
-}
-
-// https://www.data.gouv.fr/fr/datasets/r/f9fff5b1-f9e4-4ec2-b8b3-8ad7005d869c IDFM:C02298
-
-async fn periodic_task_example() {
-    use tokio::time::{Duration, MissedTickBehavior};
-    let mut interval = tokio::time::interval(Duration::from_secs(5));
-
-    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    loop {
-        interval.tick().await;
-        println!("hey");
-    }
 }

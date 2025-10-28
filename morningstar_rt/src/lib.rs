@@ -2,6 +2,7 @@ pub mod mock;
 mod prim;
 use chrono::{DateTime, Timelike, Utc, prelude::*};
 pub use prim::{IdfmPrimClient, StopId};
+pub mod parser_invoker;
 
 #[derive(Debug, Clone)]
 pub enum RealtimeStopStatus {
