@@ -43,6 +43,7 @@ impl Invoker {
         let child_process = self.spawn("morningstar_parser").await?;
         Self::await_child(child_process).await?;
         let timetable = Self::ingest_file(self.timetable_dest.clone()).await?;
+        println!("GTFS parsing and new timetable ingestion complete");
         Ok(timetable)
     }
 
@@ -50,6 +51,7 @@ impl Invoker {
         use std::process::Stdio;
         use tokio::process::Command;
 
+        println!("spawning process");
         let child = Command::new(parser_path)
             .arg(self.gtfs_source.clone())
             .arg(self.route_id.clone())
@@ -60,14 +62,18 @@ impl Invoker {
             .stderr(Stdio::inherit())
             .spawn()
             .map_err(|err| Error::ProcessSpawn(err))?;
+        println!("process spawned");
         Ok(child)
     }
 
     async fn await_child(mut child: tokio::process::Child) -> InvokerResult<()> {
+        println!("awaiting child");
         let status = child.wait().await.map_err(|err| Error::ProcessWait(err))?;
+        println!("child exited");
         if !status.success() {
             Err(Error::ParserError)
         } else {
+            println!("GTFS parsed");
             Ok(())
         }
     }
@@ -75,6 +81,7 @@ impl Invoker {
     async fn ingest_file(
         file_path: std::path::PathBuf,
     ) -> InvokerResult<morningstar_model::TimeTable> {
+        println!("spawning task to deserialise new timetable");
         let task = tokio::task::spawn_blocking(move || Self::ingest_file_sync(file_path));
         task.await.map_err(|err| Error::FileProcessingTask(err))?
     }
@@ -82,6 +89,7 @@ impl Invoker {
     fn ingest_file_sync(
         file_path: std::path::PathBuf,
     ) -> InvokerResult<morningstar_model::TimeTable> {
+        println!("opening file and deserialising");
         let file = std::fs::File::open(file_path).map_err(|err| Error::FileOpening(err))?;
         Ok(ron::de::from_reader(file).map_err(|err| Error::FileProcessing(err))?)
     }

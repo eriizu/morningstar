@@ -299,7 +299,7 @@ async fn timetable_update_on_expiry(
     file_path: std::path::PathBuf,
 ) {
     use chrono::Duration as ChronoDuration;
-    let deadline_duration = ChronoDuration::minutes(5);
+    let deadline_duration = ChronoDuration::minutes(20);
     loop {
         let (mut extracted_on, extracted_line_id, extracted_from) = {
             let timetable = state.timetable.read().await;
@@ -322,7 +322,16 @@ async fn timetable_update_on_expiry(
                 *state.timetable.write().await = val;
             }
         }
-        let deadline_instant = mk_deadline_instant_in_days(extracted_on, deadline_duration);
+        let deadline = extracted_on + deadline_duration;
+        let delta = deadline - Utc::now();
+        println!(
+            "I will invoke GTFS parsing on {} in {} days {} hours {} minutes.",
+            deadline,
+            delta.num_days(),
+            delta.num_hours() % 24,
+            delta.num_minutes() % 60,
+        );
+        let deadline_instant = mk_instant_for_deadline(deadline);
         tokio::time::sleep_until(deadline_instant).await;
     }
 }
@@ -335,6 +344,15 @@ fn mk_deadline_instant_in_days(
 ) -> tokio::time::Instant {
     use tokio::time::Duration;
     let deadline = base_date + duration;
+    let now = Utc::now();
+    let remaining = (deadline - now)
+        .to_std()
+        .unwrap_or_else(|_| Duration::from_secs(0));
+    tokio::time::Instant::now() + remaining
+}
+
+fn mk_instant_for_deadline(deadline: DateTime<Utc>) -> tokio::time::Instant {
+    use tokio::time::Duration;
     let now = Utc::now();
     let remaining = (deadline - now)
         .to_std()
