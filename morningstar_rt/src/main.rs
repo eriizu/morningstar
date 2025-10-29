@@ -20,7 +20,6 @@ async fn main() -> anyhow::Result<()> {
         tt
     };
     let state = std::sync::Arc::new(MorningstarState::new(timetable, prim_client));
-    state.next_stops().await;
     let web_server_handle = tokio::spawn(web_server(state.clone()));
     let file_path = opt.file.to_path_buf();
     let timetable_update_handle = tokio::spawn(timetable_update_on_expiry(state, file_path));

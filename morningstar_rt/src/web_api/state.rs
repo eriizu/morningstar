@@ -166,17 +166,6 @@ impl MorningstarState {
         dtos.iter().for_each(|dto| println!("{dto}"));
     }
 
-    fn choose_stop(timetable: &TimeTable) -> &'static str {
-        let binding = Local::now().date_naive();
-        let stops_served = timetable.get_stops_served_on_day(&binding);
-        dbg!(&stops_served);
-        if stops_served.contains("Parc du Bel-Air") {
-            return "Parc du Bel-Air";
-        } else {
-            return "Parc d'Activités";
-        }
-    }
-
     pub async fn next_stops_a(&self, stop_name: &str) -> Vec<StopTimeDto> {
         let today = chrono::Local::now().naive_local().date();
         let stoptimes_theorical: Vec<_> = {
@@ -195,14 +184,6 @@ impl MorningstarState {
         return dtos;
     }
 
-    pub async fn next_stops(&self) {
-        let stop_name = {
-            let timetable = self.timetable.read().await;
-            Self::choose_stop(&timetable)
-        };
-        self.next_stops_a(&stop_name).await;
-    }
-
     fn mk_stoptime_dto_vec(
         &self,
         stoptimes_realtime: &[RealtimeStop],
@@ -219,7 +200,7 @@ impl MorningstarState {
             };
             let stoptime_rt_opt = stoptimes_realtime
                 .iter()
-                .find(|realtime_stop| realtime_stop.aimed_arrival.to_utc() == time.to_utc());
+                .find(|realtime_stop| realtime_stop.aimed_arrival == time);
             dtos.push(StopTimeDto::new_with_theorical_destination(
                 stoptime,
                 stoptime_rt_opt,
