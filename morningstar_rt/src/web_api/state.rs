@@ -157,8 +157,11 @@ impl MorningstarState {
 
     pub async fn next_stops_fake(&self) {
         let generator = mock::FakeGenerator::default();
-        let stoptimes_realtime = generator.fake_realtime_list();
+        let mut stoptimes_realtime = generator.fake_realtime_list();
         let stoptimes_theorical = generator.fake_theorical_with_destination_list();
+        stoptimes_realtime
+            .iter_mut()
+            .for_each(|item| item.set_to_localtime());
         let dtos = self.mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical);
         dtos.iter().for_each(|dto| println!("{dto}"));
     }
@@ -183,9 +186,12 @@ impl MorningstarState {
                 .collect()
         };
         let stop_id = stoptimes_theorical.last().unwrap().stop_id.as_str();
-        let stoptimes_realtime = self.prim_client.get_next_busses(stop_id).await.unwrap();
+        let mut stoptimes_realtime = self.prim_client.get_next_busses(stop_id).await.unwrap();
+        stoptimes_realtime
+            .iter_mut()
+            .for_each(|item| item.set_to_localtime());
         let dtos = self.mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical);
-        // dtos.iter().for_each(|dto| println!("{dto}"));
+        dtos.iter().for_each(|dto| println!("{dto}"));
         return dtos;
     }
 
@@ -229,7 +235,7 @@ pub async fn timetable_update_on_expiry(
     file_path: std::path::PathBuf,
 ) {
     use chrono::Duration as ChronoDuration;
-    let deadline_duration = ChronoDuration::minutes(20);
+    let deadline_duration = ChronoDuration::days(7);
     loop {
         let (mut extracted_on, extracted_line_id, extracted_from) = {
             let timetable = state.timetable.read().await;

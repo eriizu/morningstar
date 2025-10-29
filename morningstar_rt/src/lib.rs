@@ -34,6 +34,15 @@ pub struct RealtimeStop {
     pub status: RealtimeStopStatus,
 }
 
+impl RealtimeStop {
+    fn set_to_localtime(&mut self) {
+        let expected = self.expected_arrival.with_timezone(&Local);
+        let aimed = self.aimed_arrival.with_timezone(&Local);
+        self.expected_arrival = expected.fixed_offset();
+        self.aimed_arrival = aimed.fixed_offset();
+    }
+}
+
 impl std::fmt::Display for RealtimeStop {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let now = chrono::Utc::now();
