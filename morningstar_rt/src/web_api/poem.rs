@@ -32,11 +32,15 @@ async fn hdl_stoptimes(
 }
 
 pub async fn web_server(state: std::sync::Arc<MorningstarState>) -> anyhow::Result<()> {
-    use poem::{EndpointExt, Route, Server, get, listener::TcpListener};
+    use poem::{
+        EndpointExt, Route, Server, get, http::Method, listener::TcpListener, middleware::Cors,
+    };
+    let cors = Cors::new();
     let routes = Route::new()
         .at("/", get(index))
         .at("/served_today", get(served_stops))
         .at("/stop/:name", get(hdl_stoptimes))
+        .with(cors)
         .data(state);
     Ok(Server::new(TcpListener::bind("0.0.0.0:3000"))
         .run(routes)
