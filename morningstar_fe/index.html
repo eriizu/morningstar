@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Morningstar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111110;
+    --surface-raised: #1a1918;
+    --border: #2a2826;
+    --border-subtle: #1e1d1b;
+    --text: #e8e4de;
+    --text-dim: #8a857d;
+    --text-muted: #5a5650;
+    --amber: #e8a832;
+    --amber-dim: #b8862a;
+    --amber-glow: rgba(232, 168, 50, 0.08);
+    --green: #5cb870;
+    --red: #d45a5a;
+    --blue: #5a8fbf;
+    --font-mono: 'DM Mono', 'Courier New', monospace;
+    --font-serif: 'Instrument Serif', Georgia, serif;
+  }
+
+  html { font-size: 18px; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-weight: 300;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  /* -- Noise texture overlay -- */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 256px 256px;
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  /* -- Layout -- */
+  .shell {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 4rem;
+  }
+
+  /* -- Header -- */
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .wordmark {
+    font-family: var(--font-serif);
+    font-size: 1.8rem;
+    font-style: italic;
+    color: var(--amber);
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .clock {
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    tabular-nums: true;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* -- Stop selector -- */
+  .selector-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .selector-label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .stop-select {
+    flex: 1;
+    min-width: 0;
+    appearance: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    font-weight: 400;
+    padding: 0.7rem 2.2rem 0.7rem 0.9rem;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%235a5650' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.8rem center;
+  }
+
+  .stop-select:hover, .stop-select:focus {
+    border-color: var(--amber-dim);
+    outline: none;
+  }
+
+  .stop-select option {
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  /* -- Status bar -- */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.55rem 0;
+    margin-bottom: 0.25rem;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+  }
+
+  .refresh-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .refresh-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--green);
+    opacity: 0.7;
+    transition: opacity 0.3s;
+  }
+
+  .refresh-dot.fetching {
+    animation: pulse-dot 0.8s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+  }
+
+  /* -- Departures table -- */
+  .departures {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .departures thead th {
+    font-size: 0.72rem;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--text-muted);
+    text-align: left;
+    padding: 0.9rem 0.6rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .departures thead th:first-child { padding-left: 0; }
+  .departures thead th:last-child { padding-right: 0; }
+
+  .departures tbody tr {
+    border-bottom: 1px solid var(--border-subtle);
+    transition: background 0.15s;
+  }
+
+  .departures tbody tr:hover {
+    background: var(--amber-glow);
+  }
+
+  .departures tbody td {
+    padding: 0.75rem 0.6rem;
+    font-size: 1rem;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+
+  .departures tbody td:first-child { padding-left: 0; }
+  .departures tbody td:last-child { padding-right: 0; }
+
+  /* Column-specific styling */
+  .col-time {
+    font-weight: 500;
+    color: var(--amber);
+    font-variant-numeric: tabular-nums;
+    min-width: 4.5rem;
+  }
+
+  .col-time--no-rt {
+    color: var(--text);
+    font-weight: 400;
+  }
+
+  .col-eta {
+    font-variant-numeric: tabular-nums;
+    min-width: 4.5rem;
+  }
+
+  .col-eta .due { color: var(--amber); font-weight: 500; animation: blink 1.4s ease-in-out infinite; }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .col-eta .soon { color: var(--text); }
+  .col-eta .later { color: var(--text-dim); }
+
+  .col-dest {
+    color: var(--text);
+    max-width: 18rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .col-status { color: var(--text-dim); }
+  .col-status .on-time { color: var(--green); }
+  .col-status .early { color: var(--blue); }
+  .col-status .late { color: var(--red); }
+
+  .col-stops {
+    color: var(--text-dim);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .col-theo {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* -- Next-up cards -- */
+  .next-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .next-card {
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .next-card:first-child {
+    border-color: var(--amber-dim);
+    background: linear-gradient(to bottom, rgba(232, 168, 50, 0.06), var(--surface-raised));
+  }
+
+  .next-card__time {
+    font-size: 1.5rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--amber);
+    line-height: 1;
+  }
+
+  .next-card__time--no-rt {
+    color: var(--text);
+    font-weight: 400;
+  }
+
+  .next-card__eta {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+
+  .next-card__eta .due {
+    color: var(--amber);
+    font-weight: 500;
+    animation: blink 1.4s ease-in-out infinite;
+  }
+
+  .next-card__dest {
+    font-size: 0.8rem;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .next-card__status {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+  }
+
+  .next-card__status .on-time { color: var(--green); }
+  .next-card__status .early { color: var(--blue); }
+  .next-card__status .late { color: var(--red); }
+
+  @media (max-width: 680px) {
+    .next-cards { gap: 0.5rem; }
+    .next-card { padding: 0.75rem; }
+    .next-card__time { font-size: 1.25rem; }
+  }
+
+  @media (max-width: 420px) {
+    .next-cards { grid-template-columns: 1fr; }
+  }
+
+  /* -- Empty / loading states -- */
+  .state-msg {
+    text-align: center;
+    padding: 4rem 1rem;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    letter-spacing: 0.06em;
+  }
+
+  .state-msg .line2 {
+    margin-top: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+
+  /* Row entrance animation */
+  .departures tbody tr {
+    animation: row-in 0.35s ease-out both;
+  }
+
+  .departures tbody tr.no-anim {
+    animation: none;
+  }
+
+  @keyframes row-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* -- Responsive -- */
+  @media (max-width: 680px) {
+    html { font-size: 15px; }
+    .shell { padding: 1.2rem 0.8rem 2rem; }
+    header { flex-direction: column; gap: 0.3rem; margin-bottom: 1.2rem; padding-bottom: 0.8rem; }
+    .selector-row { margin-bottom: 1.2rem; }
+    .stop-select { min-width: 0; width: 100%; font-size: 0.9rem; padding: 0.6rem 2rem 0.6rem 0.7rem; }
+    .departures { font-size: 0.85rem; }
+    .departures thead th, .departures tbody td { padding: 0.5rem 0.3rem; }
+    .col-stops, .col-theo { display: none; }
+    .th-stops, .th-theo { display: none; }
+    .col-dest { max-width: 9rem; }
+  }
+
+  @media (max-width: 420px) {
+    html { font-size: 14px; }
+    .col-status { display: none; }
+    .th-status { display: none; }
+    .col-dest { max-width: 7rem; }
+  }
+
+  footer {
+    margin-top: 4rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-subtle);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-align: center;
+    letter-spacing: 0.04em;
+  }
+
+  footer a {
+    color: var(--text-dim);
+    text-decoration: none;
+  }
+
+  footer a:hover {
+    color: var(--amber-dim);
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div class="wordmark">Morningstar</div>
+    <div class="clock" id="clock"></div>
+  </header>
+
+  <div class="selector-row">
+    <span class="selector-label">Stop</span>
+    <select class="stop-select" id="stop-select" disabled>
+      <option value="">Loading stops&hellip;</option>
+    </select>
+  </div>
+
+  <div class="status-bar" id="status-bar" style="display:none;">
+    <span id="results-count"></span>
+    <span class="refresh-indicator">
+      <span class="refresh-dot" id="refresh-dot"></span>
+      <span id="refresh-label">live</span>
+    </span>
+  </div>
+
+  <div id="content">
+    <div class="state-msg">
+      <div>Select a stop to view departures</div>
+    </div>
+  </div>
+
+  <footer>
+    A vision by Élise, crafted by <a href="https://claude.ai">Claude</a> &middot; Powered by Morningstar &amp; IDFM &middot; <a href="https://github.com/eriizu/morningstar/tree/main">GitHub</a>
+  </footer>
+</div>
+
+<script>
+const API_BASE = '';
+const REFRESH_INTERVAL = 20_000;
+const MAX_DEST_LEN = 30;
+
+const $select = document.getElementById('stop-select');
+const $content = document.getElementById('content');
+const $statusBar = document.getElementById('status-bar');
+const $resultsCount = document.getElementById('results-count');
+const $refreshDot = document.getElementById('refresh-dot');
+const $refreshLabel = document.getElementById('refresh-label');
+const $clock = document.getElementById('clock');
+
+let refreshTimer = null;
+let animateNext = true;
+
+// -- Clock --
+function tickClock() {
+  const now = new Date();
+  $clock.textContent = now.toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+}
+tickClock();
+setInterval(tickClock, 1000);
+
+// -- Helpers --
+function fmtTime(isoStr) {
+  if (!isoStr) return null;
+  const d = new Date(isoStr);
+  if (isNaN(d)) return null;
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function minutesFromNow(isoStr) {
+  if (!isoStr) return null;
+  const d = new Date(isoStr);
+  if (isNaN(d)) return null;
+  const mins = Math.floor((d - Date.now()) / 60_000);
+  if (mins <= 0) return { text: 'due', cls: 'due' };
+  if (mins === 1) return { text: '1 min', cls: 'soon' };
+  if (mins <= 10) return { text: `${mins} mins`, cls: 'soon' };
+  return { text: `${mins} mins`, cls: 'later' };
+}
+
+function truncate(str, len) {
+  if (!str) return '';
+  if (str.length <= len) return str;
+  return str.slice(0, len - 1) + '\u2026';
+}
+
+function statusClass(status) {
+  if (!status) return '';
+  const s = status.toLowerCase();
+  if (s.includes('on time')) return 'on-time';
+  if (s.includes('early')) return 'early';
+  if (s.includes('late')) return 'late';
+  return '';
+}
+
+function escHtml(str) {
+  const el = document.createElement('span');
+  el.textContent = str;
+  return el.innerHTML;
+}
+
+// -- Data fetching --
+async function fetchStops() {
+  const res = await fetch(`${API_BASE}/served_today`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function fetchStopTimes(name) {
+  $refreshDot.classList.add('fetching');
+  $refreshLabel.textContent = 'updating\u2026';
+  try {
+    const res = await fetch(`${API_BASE}/stop/${encodeURIComponent(name)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  } finally {
+    $refreshDot.classList.remove('fetching');
+    $refreshLabel.textContent = 'live';
+  }
+}
+
+// -- Rendering --
+function renderTable(data) {
+  const now = Date.now();
+  // Filter to future arrivals, sort by arrival time
+  const rows = data
+    .map(d => {
+      const arrStr = d.expected_arrival || d.aimed_arrival;
+      const arrDate = new Date(arrStr);
+      return { ...d, _arrStr: arrStr, _arrDate: arrDate };
+    })
+    .filter(d => !isNaN(d._arrDate) && d._arrDate.getTime() >= now - 60_000)
+    .sort((a, b) => a._arrDate - b._arrDate);
+
+  if (rows.length === 0) {
+    $statusBar.style.display = 'none';
+    $content.innerHTML = `<div class="state-msg"><div>No upcoming departures</div><div class="line2">Check back later</div></div>`;
+    return;
+  }
+
+  $statusBar.style.display = 'flex';
+  $resultsCount.textContent = `${rows.length} departure${rows.length !== 1 ? 's' : ''}`;
+
+  // -- Next-up cards (top 3) --
+  const top3 = rows.slice(0, 3);
+  let html = '<div class="next-cards">';
+  top3.forEach(d => {
+    const time = fmtTime(d._arrStr) || '\u2014';
+    const eta = minutesFromNow(d._arrStr) || { text: '\u2014', cls: '' };
+    const dest = truncate(d.destination || 'Unknown', MAX_DEST_LEN);
+    const status = d.status || '\u2014';
+    const stCls = statusClass(d.status);
+
+    html += `<div class="next-card">
+      <div class="next-card__time${d.expected_arrival ? '' : ' next-card__time--no-rt'}">${escHtml(time)}</div>
+      <div class="next-card__eta"><span class="${eta.cls}">${escHtml(eta.text)}</span></div>
+      <div class="next-card__dest">${escHtml(dest)}</div>
+      <div class="next-card__status"><span class="${stCls}">${escHtml(status)}</span></div>
+    </div>`;
+  });
+  html += '</div>';
+
+  // -- Full table --
+  html += `<table class="departures">
+    <thead><tr>
+      <th>Expected</th>
+      <th>In</th>
+      <th>Destination</th>
+      <th class="th-status">Status</th>
+      <th class="th-stops">Stops</th>
+      <th class="th-theo">Theoretical</th>
+    </tr></thead><tbody>`;
+
+  rows.forEach((d, i) => {
+    const expected = fmtTime(d._arrStr) || '\u2014';
+    const eta = minutesFromNow(d._arrStr) || { text: '\u2014', cls: '' };
+    const dest = truncate(d.destination || 'Unknown', MAX_DEST_LEN);
+    const status = d.status || '\u2014';
+    const stCls = statusClass(d.status);
+    const stops = d.stops_to_destination != null ? d.stops_to_destination : '\u2014';
+    const theo = fmtTime(d.aimed_arrival) || '\u2014';
+
+    html += `<tr${animateNext ? ` style="animation-delay:${i * 0.04}s"` : ' class="no-anim"'}>
+      <td class="col-time${d.expected_arrival ? '' : ' col-time--no-rt'}">${escHtml(expected)}</td>
+      <td class="col-eta"><span class="${eta.cls}">${escHtml(eta.text)}</span></td>
+      <td class="col-dest">${escHtml(dest)}</td>
+      <td class="col-status${stCls ? ' ' + stCls : ''}">${escHtml(status)}</td>
+      <td class="col-stops">${escHtml(String(stops))}</td>
+      <td class="col-theo">${escHtml(theo)}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  $content.innerHTML = html;
+  animateNext = false;
+}
+
+// -- Init --
+async function loadStops() {
+  try {
+    const stops = await fetchStops();
+    $select.innerHTML = '<option value="">Select a stop\u2026</option>';
+    stops.sort((a, b) => a.localeCompare(b));
+    stops.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      $select.appendChild(opt);
+    });
+    $select.disabled = false;
+  } catch (e) {
+    $select.innerHTML = '<option value="">Failed to load stops</option>';
+    console.error('Failed to fetch stops:', e);
+  }
+}
+
+async function loadTimes() {
+  const name = $select.value;
+  if (!name) return;
+  try {
+    const data = await fetchStopTimes(name);
+    renderTable(data);
+  } catch (e) {
+    $content.innerHTML = `<div class="state-msg"><div>Connection error</div><div class="line2">${escHtml(e.message)}</div></div>`;
+    console.error('Failed to fetch stop times:', e);
+  }
+}
+
+function setStopParam(name) {
+  const url = new URL(window.location);
+  if (name) {
+    url.searchParams.set('stop', name);
+  } else {
+    url.searchParams.delete('stop');
+  }
+  history.replaceState(null, '', url);
+}
+
+function getStopParam() {
+  return new URL(window.location).searchParams.get('stop');
+}
+
+$select.addEventListener('change', () => {
+  clearInterval(refreshTimer);
+  refreshTimer = null;
+  animateNext = true;
+  setStopParam($select.value);
+
+  if (!$select.value) {
+    $statusBar.style.display = 'none';
+    $content.innerHTML = '<div class="state-msg"><div>Select a stop to view departures</div></div>';
+    return;
+  }
+
+  loadTimes();
+  refreshTimer = setInterval(loadTimes, REFRESH_INTERVAL);
+});
+
+loadStops().then(() => {
+  const saved = getStopParam();
+  if (saved && $select.querySelector(`option[value="${CSS.escape(saved)}"]`)) {
+    $select.value = saved;
+    $select.dispatchEvent(new Event('change'));
+  }
+});
+</script>
+</body>
+</html>

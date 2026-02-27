@@ -1,13 +1,12 @@
 use super::MorningstarState;
 use super::StopTimeDto;
 use chrono::prelude::*;
+use poem::web::{Data, Html, Json, Path};
 
 #[poem::handler]
-fn index() -> &'static str {
-    "hello"
+fn index() -> Html<&'static str> {
+    Html(include_str!("../../../morningstar_fe/index.html"))
 }
-
-use poem::web::{Data, Json, Path};
 
 #[poem::handler]
 async fn served_stops(Data(state): Data<&std::sync::Arc<MorningstarState>>) -> Json<Vec<String>> {
