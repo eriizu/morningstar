@@ -1,0 +1,11 @@
+services:
+  rt:
+    build: .
+    environment:
+      API_KEY: AAA
+    restart: on-failure
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ms-rt.rule=Host(`bus.example.fr`)"
+      - "traefik.http.routers.ms-rt.entrypoints=websecure"
+      - "traefik.http.routers.ms-rt.tls.certresolver=letsencrypt"
