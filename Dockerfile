@@ -25,7 +25,7 @@ RUN cargo build --release --manifest-path morningstar_rt/Cargo.toml \
  && cargo build --release --manifest-path morningstar_parser/Cargo.toml
 
 # --- Runtime ---
-FROM debian:bookworm-slim
+FROM debian:trixe-slim
 
 RUN apt-get update && apt-get install -y ca-certificates libc6 && rm -rf /var/lib/apt/lists/*
 
