@@ -35,11 +35,9 @@ pub struct RealtimeStop {
 }
 
 impl RealtimeStop {
-    fn set_to_localtime(&mut self) {
-        let expected = self.expected_arrival.with_timezone(&Local);
-        let aimed = self.aimed_arrival.with_timezone(&Local);
-        self.expected_arrival = expected.fixed_offset();
-        self.aimed_arrival = aimed.fixed_offset();
+    fn really_convert_to_workting_time(&mut self, dt_maker: &web_api::DatetimeMaker) {
+        self.expected_arrival = dt_maker.datetime_with_working_tz(self.expected_arrival);
+        self.aimed_arrival = dt_maker.datetime_with_working_tz(self.aimed_arrival);
     }
 }
 

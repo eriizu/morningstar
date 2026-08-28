@@ -5,34 +5,43 @@ use morningstar_model::{StopTimeWithDestination, TimeTable};
 /// Makes `chrono::DateTime` from chrono::NaiveTime re-using a common timezone and basedate. We
 /// need it for mass-producing absolute bus stoptimes that can be compared to the realtime date
 /// returns by the IDFM-PRIM Siri-lite data.
-struct DatetimeMaker {
-    tz: chrono_tz::Tz,
-    base_date: chrono::DateTime<FixedOffset>,
+pub struct DatetimeMaker {
+    pub tz: chrono_tz::Tz,
 }
 
 impl DatetimeMaker {
     /// Create a DatetimeMaker
-    fn new(tz_name: &str, base_date: chrono::DateTime<FixedOffset>) -> Option<Self> {
+    pub fn new(tz_name: &str) -> Option<Self> {
         let tz = chrono_tz::TZ_VARIANTS
             .iter()
             .find(|tz| tz.name() == tz_name)?
             .clone();
-        Some(Self { tz, base_date })
+        Some(Self { tz })
     }
 
     /// Generate a `chrono::DateTime` using the `chrono::NaiveTime` provided and the contained
     /// timezone and base date.
-    fn make_datetime_with_time_and_tz(
+    pub fn make_datetime_with_time_and_tz(
         &self,
         time: NaiveTime,
     ) -> Option<chrono::DateTime<FixedOffset>> {
-        let date = self.tz.from_utc_datetime(&self.base_date.naive_utc());
         use chrono::LocalResult;
-        match date.with_time(time) {
+        match Utc::now().with_timezone(&self.tz).with_time(time) {
             LocalResult::None => None,
             LocalResult::Single(val) => Some(val.fixed_offset()),
             LocalResult::Ambiguous(earliest, _) => Some(earliest.fixed_offset()),
         }
+    }
+
+    /// Generate a `chrono::DateTime` using the `chrono::NaiveTime` provided and the contained
+    /// timezone and base date.
+    pub fn datetime_with_working_tz(
+        &self,
+        datetime: DateTime<FixedOffset>,
+    ) -> chrono::DateTime<FixedOffset> {
+        self.tz
+            .from_utc_datetime(&datetime.naive_utc())
+            .fixed_offset()
     }
 }
 
@@ -146,8 +155,8 @@ pub struct MorningstarState {
 
 impl MorningstarState {
     pub fn new(timetable: TimeTable, prim_client: IdfmPrimClient) -> Self {
-        let dt_maker =
-            DatetimeMaker::new(timetable.timezone.as_str(), Utc::now().fixed_offset()).unwrap();
+        println!("timetable timezone {}", timetable.timezone.as_str());
+        let dt_maker = DatetimeMaker::new(timetable.timezone.as_str()).unwrap();
         Self {
             dt_maker,
             prim_client,
@@ -161,8 +170,10 @@ impl MorningstarState {
         let stoptimes_theorical = generator.fake_theorical_with_destination_list();
         stoptimes_realtime
             .iter_mut()
-            .for_each(|item| item.set_to_localtime());
-        let dtos = self.mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical);
+            .for_each(|item| item.really_convert_to_workting_time(&self.dt_maker));
+        let dtos = self
+            .mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical)
+            .await;
         dtos.iter().for_each(|dto| println!("{dto}"));
     }
 
@@ -178,36 +189,43 @@ impl MorningstarState {
         let mut stoptimes_realtime = self.prim_client.get_next_busses(stop_id).await.unwrap();
         stoptimes_realtime
             .iter_mut()
-            .for_each(|item| item.set_to_localtime());
-        let dtos = self.mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical);
+            .for_each(|item| item.really_convert_to_workting_time(&self.dt_maker));
+        let dtos = self
+            .mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical)
+            .await;
         dtos.iter().for_each(|dto| println!("{dto}"));
         return dtos;
     }
 
-    fn mk_stoptime_dto_vec(
+    async fn mk_stoptime_dto_vec(
         &self,
         stoptimes_realtime: &[RealtimeStop],
         stoptimes_theorical: &[StopTimeWithDestination],
     ) -> Vec<StopTimeDto> {
-        let mut dtos = vec![];
-        for stoptime in stoptimes_theorical {
-            let Some(time) = self.dt_maker.make_datetime_with_time_and_tz(stoptime.time) else {
-                eprintln!(
-                    "stop time {} doesn't exist in destination timezone.",
-                    stoptime.time
-                );
-                continue;
-            };
-            let stoptime_rt_opt = stoptimes_realtime
-                .iter()
-                .find(|realtime_stop| realtime_stop.aimed_arrival == time);
-            dtos.push(StopTimeDto::new_with_theorical_destination(
-                stoptime,
-                stoptime_rt_opt,
-                time,
-            ));
-        }
-        dtos
+        stoptimes_theorical
+            .iter()
+            .filter_map(|stoptime_theorical| {
+                self.dt_maker
+                    .make_datetime_with_time_and_tz(stoptime_theorical.time)
+                    .map(|datetime| (stoptime_theorical, datetime))
+                    .or_else(|| {
+                        eprintln!(
+                            "stop time {} doesn't exist in destination timezone.",
+                            stoptime_theorical.time
+                        );
+                        None
+                    })
+            })
+            .map(|(stoptime_theorical, datetime)| {
+                StopTimeDto::new_with_theorical_destination(
+                    stoptime_theorical,
+                    stoptimes_realtime
+                        .iter()
+                        .find(|realtime_stop| realtime_stop.aimed_arrival == datetime),
+                    datetime,
+                )
+            })
+            .collect::<Vec<_>>()
     }
 }
 
