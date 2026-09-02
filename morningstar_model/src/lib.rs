@@ -1,4 +1,7 @@
-use chrono::prelude::*;
+use jiff::{
+    civil::{Date, Time},
+    Timestamp,
+};
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -13,7 +16,7 @@ pub struct TimeTable {
     pub journeys: Vec<Journey>,
     pub excpetions: multimap::MultiMap<String, ServiceException>,
     pub service_patterns: HashMap<String, ServicePattern>,
-    pub extracted_on: chrono::DateTime<Utc>,
+    pub extracted_on: Timestamp,
     pub extracted_from: String,
     pub extracted_line_id: String,
 }
@@ -27,16 +30,13 @@ impl TimeTable {
         self.journeys
             .iter_mut()
             .map(|journey| &mut journey.stops)
-            .for_each(|stops| stops.sort_by(|lhs, rhs| lhs.time.cmp(&rhs.time)));
+            .for_each(|stops| stops.sort_by_key(|stop| stop.time));
         self.journeys
             .sort_by(|lhs, rhs| lhs.stops[0].time.cmp(&rhs.stops[0].time));
     }
 
     /// Iterator on journeys that run on provided date.
-    pub fn get_journeys_for_day<'a>(
-        &'a self,
-        day: &'a chrono::NaiveDate,
-    ) -> impl Iterator<Item = &'a Journey> {
+    pub fn get_journeys_for_day<'a>(&'a self, day: &'a Date) -> impl Iterator<Item = &'a Journey> {
         self.journeys
             .iter()
             .filter_map(|journey| self.filter_map_journey_on_date(journey, day))
@@ -47,7 +47,7 @@ impl TimeTable {
     fn filter_map_journey_on_date<'a>(
         &'a self,
         journey: &'a Journey,
-        day: &'a chrono::NaiveDate,
+        day: &'a Date,
     ) -> Option<&'a Journey> {
         if let Some(kind) = self.get_exception_kind_for_day(&journey.service_id, day) {
             return match kind {
@@ -70,7 +70,7 @@ impl TimeTable {
     /// in between stop a and b. Names must be exact.
     pub fn get_day_stoptimes_from_a_to_b<'a>(
         &'a self,
-        day: &'a chrono::NaiveDate,
+        day: &'a Date,
         a: &'a str,
         b: &'a str,
     ) -> impl Iterator<Item = (&'a StopTime, &'a StopTime)> {
@@ -90,7 +90,7 @@ impl TimeTable {
     /// from a stop name. Names must be exact.
     pub fn get_day_stoptimes_from_stop<'a>(
         &'a self,
-        day: &'a chrono::NaiveDate,
+        day: &'a Date,
         stop_name: &'a str,
     ) -> impl Iterator<Item = &'a StopTime> {
         let today_journeys = self.get_journeys_for_day(day);
@@ -104,7 +104,7 @@ impl TimeTable {
 
     pub fn get_day_stoptimes_and_destination_for_stop<'a>(
         &'a self,
-        day: &'a chrono::NaiveDate,
+        day: &'a Date,
         stop_name: &'a str,
     ) -> impl Iterator<Item = StopTimeWithDestination> + use<'a> {
         self.get_journeys_for_day(day).flat_map(move |journey| {
@@ -122,24 +122,20 @@ impl TimeTable {
                 .map(move |(idx, stop)| StopTimeWithDestination {
                     stop_name: stop.stop_name.clone(),
                     stop_id: stop.stop_id.clone(),
-                    time: stop.time.clone(),
+                    time: stop.time,
                     destination: destination.to_string(),
                     stops_to_destination: (stops_len - idx) as u32 - 1,
                 })
         })
     }
 
-    pub fn get_stops_served_on_day<'a>(&'a self, day: &'a chrono::NaiveDate) -> HashSet<&'a str> {
+    pub fn get_stops_served_on_day<'a>(&'a self, day: &'a Date) -> HashSet<&'a str> {
         self.get_journeys_for_day(day)
             .flat_map(|journey| journey.stops.iter().map(|stop| stop.stop_name.as_str()))
             .collect()
     }
 
-    fn get_exception_kind_for_day(
-        &self,
-        service_id: &str,
-        day: &chrono::NaiveDate,
-    ) -> Option<Exception> {
+    fn get_exception_kind_for_day(&self, service_id: &str, day: &Date) -> Option<Exception> {
         let (added, deleted) = self
             .excpetions
             .get_vec(service_id)?
@@ -163,7 +159,7 @@ impl TimeTable {
 
 impl Default for TimeTable {
     fn default() -> Self {
-        let now = Utc::now();
+        let now = Timestamp::now();
         Self {
             timezone: "Europe/Paris".to_string(),
             journeys: vec![],
@@ -186,14 +182,14 @@ pub struct Journey {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StopTime {
-    pub time: chrono::NaiveTime,
+    pub time: Time,
     pub stop_name: String,
     pub stop_id: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StopTimeWithDestination {
-    pub time: chrono::NaiveTime,
+    pub time: Time,
     pub stop_name: String,
     pub stop_id: String,
     pub destination: String,
@@ -203,15 +199,15 @@ pub struct StopTimeWithDestination {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ServicePattern {
     pub weekdays: WeekdayFlags,
-    pub start_date: chrono::NaiveDate,
-    pub end_date: chrono::NaiveDate,
+    pub start_date: Date,
+    pub end_date: Date,
 }
 
 // #[derive(Clone, serde::Deserialize, serde::Serialize, Debug, StructuralConvert)]
 // #[convert(from(gtfs_structures::CalendarDate))]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServiceException {
-    pub date: chrono::NaiveDate,
+    pub date: Date,
     pub exception_type: Exception,
 }
 
@@ -228,14 +224,14 @@ pub enum Exception {
 #[cfg(test)]
 mod test {
     use super::*;
-    use chrono::prelude::*;
+    use jiff::civil::{Date, Time};
 
     fn sample_tt() -> TimeTable {
         let mut tt = super::TimeTable::new();
         let mut service_pattern = super::ServicePattern {
             weekdays: WeekdayFlags::WORKDAYS,
-            start_date: NaiveDate::from_yo_opt(2024, 1).unwrap(),
-            end_date: NaiveDate::from_yo_opt(2024, 75).unwrap(),
+            start_date: Date::new(2024, 1, 1).unwrap(),
+            end_date: Date::new(2024, 3, 15).unwrap(),
         };
         tt.service_patterns
             .insert("wd1".to_owned(), service_pattern.clone());
@@ -244,22 +240,22 @@ mod test {
             .insert("we1".to_owned(), service_pattern.clone());
         let mut wd_stops = vec![
             StopTime {
-                time: chrono::NaiveTime::from_hms_opt(14, 0, 0).unwrap(),
+                time: Time::new(14, 0, 0, 0).unwrap(),
                 stop_name: "Église".to_owned(),
                 stop_id: "".to_owned(),
             },
             StopTime {
-                time: chrono::NaiveTime::from_hms_opt(14, 6, 0).unwrap(),
+                time: Time::new(14, 6, 0, 0).unwrap(),
                 stop_name: "Marché".to_owned(),
                 stop_id: "".to_owned(),
             },
             StopTime {
-                time: chrono::NaiveTime::from_hms_opt(14, 9, 0).unwrap(),
+                time: Time::new(14, 9, 0, 0).unwrap(),
                 stop_name: "Potato Factory".to_owned(),
                 stop_id: "".to_owned(),
             },
             StopTime {
-                time: chrono::NaiveTime::from_hms_opt(14, 15, 0).unwrap(),
+                time: Time::new(14, 15, 0, 0).unwrap(),
                 stop_name: "Gare".to_owned(),
                 stop_id: "".to_owned(),
             },
@@ -268,32 +264,32 @@ mod test {
             service_id: "wd1".to_owned(),
             stops: wd_stops.clone(),
         });
-        wd_stops[0].time = chrono::NaiveTime::from_hms_opt(15, 0, 0).unwrap();
-        wd_stops[1].time = chrono::NaiveTime::from_hms_opt(15, 6, 0).unwrap();
-        wd_stops[2].time = chrono::NaiveTime::from_hms_opt(15, 6, 0).unwrap();
-        wd_stops[3].time = chrono::NaiveTime::from_hms_opt(15, 15, 0).unwrap();
+        wd_stops[0].time = Time::new(15, 0, 0, 0).unwrap();
+        wd_stops[1].time = Time::new(15, 6, 0, 0).unwrap();
+        wd_stops[2].time = Time::new(15, 6, 0, 0).unwrap();
+        wd_stops[3].time = Time::new(15, 15, 0, 0).unwrap();
         tt.journeys.push(Journey {
             service_id: "wd1".to_owned(),
             stops: wd_stops.clone(),
         });
         let mut we_stops = vec![
             StopTime {
-                time: chrono::NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
+                time: Time::new(16, 0, 0, 0).unwrap(),
                 stop_name: "Église".to_owned(),
                 stop_id: "".to_owned(),
             },
             StopTime {
-                time: chrono::NaiveTime::from_hms_opt(16, 6, 0).unwrap(),
+                time: Time::new(16, 6, 0, 0).unwrap(),
                 stop_name: "Marché".to_owned(),
                 stop_id: "".to_owned(),
             },
             StopTime {
-                time: chrono::NaiveTime::from_hms_opt(16, 9, 0).unwrap(),
+                time: Time::new(16, 9, 0, 0).unwrap(),
                 stop_name: "Terrain d'airsoft".to_owned(),
                 stop_id: "".to_owned(),
             },
             StopTime {
-                time: chrono::NaiveTime::from_hms_opt(16, 15, 0).unwrap(),
+                time: Time::new(16, 15, 0, 0).unwrap(),
                 stop_name: "Gare".to_owned(),
                 stop_id: "".to_owned(),
             },
@@ -302,10 +298,10 @@ mod test {
             service_id: "we1".to_owned(),
             stops: we_stops.clone(),
         });
-        we_stops[0].time = chrono::NaiveTime::from_hms_opt(15, 0, 0).unwrap();
-        we_stops[1].time = chrono::NaiveTime::from_hms_opt(15, 6, 0).unwrap();
-        we_stops[2].time = chrono::NaiveTime::from_hms_opt(15, 6, 0).unwrap();
-        we_stops[3].time = chrono::NaiveTime::from_hms_opt(15, 15, 0).unwrap();
+        we_stops[0].time = Time::new(15, 0, 0, 0).unwrap();
+        we_stops[1].time = Time::new(15, 6, 0, 0).unwrap();
+        we_stops[2].time = Time::new(15, 6, 0, 0).unwrap();
+        we_stops[3].time = Time::new(15, 15, 0, 0).unwrap();
         tt.journeys.push(Journey {
             service_id: "we1".to_owned(),
             stops: we_stops.clone(),
@@ -320,8 +316,8 @@ mod test {
     }
 
     fn internal_inside_operating_range(tt: &mut TimeTable) {
-        let we_day = NaiveDate::from_yo_opt(2024, 7).unwrap();
-        let wd_day = NaiveDate::from_yo_opt(2024, 8).unwrap();
+        let we_day = Date::new(2024, 1, 7).unwrap();
+        let wd_day = Date::new(2024, 1, 8).unwrap();
         let journeys: Vec<_> = tt.get_journeys_for_day(&wd_day).collect();
         for item in journeys {
             let count = item
@@ -351,13 +347,13 @@ mod test {
     }
 
     fn internal_outside_operating_range(tt: &mut TimeTable) {
-        let we_day = NaiveDate::from_yo_opt(2024, 222).unwrap();
-        let wd_day = NaiveDate::from_yo_opt(2024, 223).unwrap();
+        let we_day = Date::new(2024, 8, 9).unwrap();
+        let wd_day = Date::new(2024, 8, 10).unwrap();
         let journeys = tt.get_journeys_for_day(&wd_day).count();
         assert_eq!(journeys, 0);
         let journeys = tt.get_journeys_for_day(&we_day).count();
         assert_eq!(journeys, 0);
-        let day = NaiveDate::from_yo_opt(2024, 76).unwrap();
+        let day = Date::new(2024, 3, 16).unwrap();
         let journeys = tt.get_journeys_for_day(&day).count();
         assert_eq!(journeys, 0);
     }
@@ -374,9 +370,37 @@ mod test {
     }
 
     #[test]
+    fn reads_timetable_dates_written_by_chrono() {
+        let legacy = r#"(
+            timezone: "Europe/Paris",
+            journeys: [],
+            excpetions: {},
+            service_patterns: {},
+            extracted_on: "2024-01-07T12:34:56+00:00",
+            extracted_from: "fixture.zip",
+            extracted_line_id: "42",
+        )"#;
+
+        let timetable: TimeTable = ron::from_str(legacy).unwrap();
+
+        assert_eq!(
+            timetable.extracted_on,
+            "2024-01-07T12:34:56Z".parse::<Timestamp>().unwrap()
+        );
+        assert_eq!(
+            ron::from_str::<Date>(r#""2024-01-07""#).unwrap(),
+            Date::new(2024, 1, 7).unwrap()
+        );
+        assert_eq!(
+            ron::from_str::<Time>(r#""14:06:00""#).unwrap(),
+            Time::new(14, 6, 0, 0).unwrap()
+        );
+    }
+
+    #[test]
     fn a_to_b_journey() {
         let tt = sample_tt();
-        let day = NaiveDate::from_yo_opt(2024, 7).unwrap();
+        let day = Date::new(2024, 1, 7).unwrap();
         let stoptimes: Vec<_> = tt
             .get_day_stoptimes_from_a_to_b(&day, "Marché", "Gare")
             .collect();
@@ -391,7 +415,7 @@ mod test {
     #[test]
     fn a_to_b_journey_wrong_way() {
         let tt = sample_tt();
-        let day = NaiveDate::from_yo_opt(2024, 7).unwrap();
+        let day = Date::new(2024, 1, 7).unwrap();
         let stoptimes: Vec<_> = tt
             .get_day_stoptimes_from_a_to_b(&day, "Gare", "Marché")
             .collect();
@@ -402,7 +426,7 @@ mod test {
     #[test]
     fn a_to_b_journey_non_existant_dest() {
         let tt = sample_tt();
-        let day = NaiveDate::from_yo_opt(2024, 7).unwrap();
+        let day = Date::new(2024, 1, 7).unwrap();
         let stoptimes: Vec<_> = tt
             .get_day_stoptimes_from_a_to_b(&day, "Marché", "Arrêt qui n'existe pas")
             .collect();
@@ -413,7 +437,7 @@ mod test {
     #[test]
     fn a_to_b_journey_non_existant_start() {
         let tt = sample_tt();
-        let day = NaiveDate::from_yo_opt(2024, 7).unwrap();
+        let day = Date::new(2024, 1, 7).unwrap();
         let stoptimes: Vec<_> = tt
             .get_day_stoptimes_from_a_to_b(&day, "Arrêt qui n'existe pas", "Marché")
             .collect();
@@ -424,13 +448,13 @@ mod test {
     #[test]
     fn day_stop_names() {
         let tt = sample_tt();
-        let day = NaiveDate::from_yo_opt(2024, 7).unwrap();
+        let day = Date::new(2024, 1, 7).unwrap();
         let stop_names = tt.get_stops_served_on_day(&day);
         assert_eq!(
             stop_names,
             ["Église", "Marché", "Gare", "Terrain d'airsoft"].into()
         );
-        let day = NaiveDate::from_yo_opt(2024, 8).unwrap();
+        let day = Date::new(2024, 1, 8).unwrap();
         let stop_names = tt.get_stops_served_on_day(&day);
         assert_eq!(
             stop_names,

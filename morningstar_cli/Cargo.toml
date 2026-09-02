@@ -5,12 +5,11 @@ edition = "2021"
 
 [dependencies]
 morningstar_model = { path = "../morningstar_model" }
-chrono = { version = "0.4.38", default-features = false, features = ["alloc", "now", "serde", "std", "clock"] }
-clap = { version = "4.5.16", features = ["derive"] }
-inquire = "0.7.5"
-fuse-rust = "0.3.2"
-ron = "0.8.1"
-serde = { version = "1.0.204", features = ["derive"] }
+jiff = "0.2.35"
+clap = { version = "4.6.6", features = ["derive"] }
+inquire = "0.9.4"
+fuse-rust = "0.4.0"
+ron = "0.12.2"
 
 [profile.release]
 opt-level = 3

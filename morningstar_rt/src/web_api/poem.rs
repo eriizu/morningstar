@@ -1,6 +1,5 @@
 use super::MorningstarState;
 use super::StopTimeDto;
-use chrono::prelude::*;
 use poem::web::{Data, Html, Json, Path};
 
 #[poem::handler]
@@ -10,7 +9,7 @@ fn index() -> Html<&'static str> {
 
 #[poem::handler]
 async fn served_stops(Data(state): Data<&std::sync::Arc<MorningstarState>>) -> Json<Vec<String>> {
-    let today = Local::now().date_naive();
+    let today = state.today();
     let timetable = state.timetable.read().await;
     Json(
         timetable
@@ -31,9 +30,7 @@ async fn hdl_stoptimes(
 }
 
 pub async fn web_server(state: std::sync::Arc<MorningstarState>) -> anyhow::Result<()> {
-    use poem::{
-        EndpointExt, Route, Server, get, http::Method, listener::TcpListener, middleware::Cors,
-    };
+    use poem::{EndpointExt, Route, Server, get, listener::TcpListener, middleware::Cors};
     let cors = Cors::new();
     let routes = Route::new()
         .at("/", get(index))

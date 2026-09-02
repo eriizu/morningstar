@@ -1,19 +1,18 @@
 [package]
 name = "morningstar_parser"
-version = "1.3.0"
+version = "2.0.0"
 edition = "2021"
 
 [dependencies]
-chrono = { version = "0.4.38", features = ["serde"] }
+chrono = { version = "0.4.45", default-features = false }
+jiff = { version = "0.2.35", default-features = false, features = ["std"] }
 gtfs-structures = "0.41.3"
-multimap = "0.10.0"
-ron = "0.8.1"
-serde = { version = "1.0.204", features = ["derive"] }
+ron = "0.12.2"
 spinoff = "0.8.0"
-structural-convert = "0.13.0"
 unidecode = "0.3.0"
 morningstar_model = { path = "../morningstar_model" }
-clap = { version = "4.5.16", features = ["derive"] }
+clap = { version = "4.6.6", features = ["derive"] }
+rayon = "1.12.0"
 
 [profile.release]
 opt-level = 3

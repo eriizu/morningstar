@@ -1,7 +1,6 @@
 mod extractor;
-use chrono::prelude::*;
-
 use clap::Parser;
+use jiff::Timestamp;
 #[derive(Parser)]
 pub struct Opt {
     pub path_to_gtfs: String,
@@ -23,10 +22,10 @@ impl std::fmt::Display for Opt {
     }
 }
 
-pub fn if_file_get_date(fpath: &str) -> Option<chrono::DateTime<Utc>> {
+pub fn if_file_get_date(fpath: &str) -> Option<Timestamp> {
     let fpath = <std::path::PathBuf as std::str::FromStr>::from_str(fpath).ok()?;
     let meta = fpath.metadata().ok()?;
-    let date = chrono::DateTime::try_from(meta.created().ok()?).ok()?;
+    let date = Timestamp::try_from(meta.created().ok()?).ok()?;
     Some(date)
 }
 

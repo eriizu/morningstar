@@ -1,5 +1,5 @@
-use chrono::prelude::*;
 use clap::Parser;
+use jiff::{civil::Time, Zoned};
 
 #[derive(Parser)]
 struct Opt {
@@ -18,8 +18,7 @@ pub fn main() {
     let opt = Opt::parse();
 
     let (today, now) = {
-        let now = Local::now();
-        let now = now.naive_local();
+        let now = Zoned::now();
         (now.date(), now.time())
     };
 
@@ -33,7 +32,7 @@ pub fn main() {
         println!(
             "source file or url: {}\ncreated on: {}\nline id: {}",
             tt.extracted_from,
-            tt.extracted_on.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            tt.extracted_on.strftime("%Y-%m-%d %H:%M:%S UTC"),
             tt.extracted_line_id
         );
     }
@@ -53,11 +52,11 @@ pub fn main() {
     );
 }
 
-fn display_next_departures<'a, I>(iter: I, now: NaiveTime, opt: Opt)
+fn display_next_departures<'a, I>(iter: I, now: Time, opt: Opt)
 where
     I: Iterator<Item = &'a morningstar_model::StopTime>,
 {
-    iter.map(|dep| (dep.time.signed_duration_since(now).num_minutes(), dep))
+    iter.map(|dep| (dep.time.duration_since(now).as_mins(), dep))
         .filter(|(minutes_from_now, a)| {
             if *minutes_from_now < -10 {
                 false

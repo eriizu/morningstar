@@ -1,5 +1,5 @@
 use bitflags::bitflags;
-use chrono::prelude::*;
+use jiff::civil::{Date, Weekday};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
@@ -40,15 +40,15 @@ impl Display for WeekdayFlags {
     }
 }
 
-pub fn runs_on_date(date: &chrono::NaiveDate, flags: WeekdayFlags) -> bool {
+pub fn runs_on_date(date: &Date, flags: WeekdayFlags) -> bool {
     match date.weekday() {
-        chrono::Weekday::Mon if flags.contains(WeekdayFlags::MONDAY) => true,
-        chrono::Weekday::Tue if flags.contains(WeekdayFlags::TUESDAY) => true,
-        chrono::Weekday::Wed if flags.contains(WeekdayFlags::WEDNESDAY) => true,
-        chrono::Weekday::Thu if flags.contains(WeekdayFlags::THURSDAY) => true,
-        chrono::Weekday::Fri if flags.contains(WeekdayFlags::FRIDAY) => true,
-        chrono::Weekday::Sat if flags.contains(WeekdayFlags::SATURDAY) => true,
-        chrono::Weekday::Sun if flags.contains(WeekdayFlags::SUNDAY) => true,
+        Weekday::Monday if flags.contains(WeekdayFlags::MONDAY) => true,
+        Weekday::Tuesday if flags.contains(WeekdayFlags::TUESDAY) => true,
+        Weekday::Wednesday if flags.contains(WeekdayFlags::WEDNESDAY) => true,
+        Weekday::Thursday if flags.contains(WeekdayFlags::THURSDAY) => true,
+        Weekday::Friday if flags.contains(WeekdayFlags::FRIDAY) => true,
+        Weekday::Saturday if flags.contains(WeekdayFlags::SATURDAY) => true,
+        Weekday::Sunday if flags.contains(WeekdayFlags::SUNDAY) => true,
         _ => false,
     }
 }

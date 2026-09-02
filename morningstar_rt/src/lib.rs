@@ -1,6 +1,6 @@
 pub mod mock;
 mod prim;
-use chrono::{DateTime, Timelike, Utc, prelude::*};
+use jiff::{Timestamp, tz::TimeZone};
 pub use prim::{IdfmPrimClient, StopId};
 pub mod parser_invoker;
 pub mod web_api;
@@ -28,30 +28,24 @@ impl std::fmt::Display for RealtimeStopStatus {
 
 #[derive(Debug, Clone)]
 pub struct RealtimeStop {
-    pub expected_arrival: DateTime<chrono::FixedOffset>,
-    pub aimed_arrival: DateTime<chrono::FixedOffset>,
+    pub expected_arrival: Timestamp,
+    pub aimed_arrival: Timestamp,
     pub destination: String,
     pub status: RealtimeStopStatus,
 }
 
-impl RealtimeStop {
-    fn really_convert_to_workting_time(&mut self, dt_maker: &web_api::DatetimeMaker) {
-        self.expected_arrival = dt_maker.datetime_with_working_tz(self.expected_arrival);
-        self.aimed_arrival = dt_maker.datetime_with_working_tz(self.aimed_arrival);
-    }
-}
-
 impl std::fmt::Display for RealtimeStop {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let now = chrono::Utc::now();
-        let delta = self.expected_arrival.to_utc() - now;
+        let now = Timestamp::now();
+        let delta = self.expected_arrival.duration_since(now);
+        let aimed = self.aimed_arrival.to_zoned(TimeZone::system());
         write!(
             f,
             "{:02}:{:02} bus to {}, arives in {} mins ({})",
-            self.aimed_arrival.hour(),
-            self.aimed_arrival.minute(),
+            aimed.hour(),
+            aimed.minute(),
             self.destination,
-            delta.num_minutes(),
+            delta.as_mins(),
             self.status
         )
     }

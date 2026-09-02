@@ -1,28 +1,28 @@
 use super::{RealtimeStop, RealtimeStopStatus};
-use chrono::prelude::*;
+use jiff::{RoundMode, SignedDuration, Timestamp, TimestampRound, Unit, tz::TimeZone};
 use morningstar_model::{StopTime, StopTimeWithDestination};
 
 /// Generator to use for testing, that produces realtime and theorical data from a specific date
 /// and time.
 pub struct FakeGenerator {
-    base_date: chrono::DateTime<FixedOffset>,
+    base_date: Timestamp,
+    tz: TimeZone,
 }
 
 impl Default for FakeGenerator {
     fn default() -> Self {
-        let tz = chrono_tz::Europe::Paris;
-        let now = tz
-            .from_utc_datetime(
-                &Utc::now()
-                    .with_second(0)
-                    .unwrap()
-                    .with_nanosecond(0)
-                    .unwrap()
-                    .naive_utc(),
+        let now = Timestamp::now()
+            .round(
+                TimestampRound::new()
+                    .smallest(Unit::Minute)
+                    .mode(RoundMode::Trunc),
             )
-            .fixed_offset();
+            .expect("the current timestamp can be rounded to a minute");
 
-        Self { base_date: now }
+        Self {
+            base_date: now,
+            tz: TimeZone::get("Europe/Paris").expect("Europe/Paris is in the IANA database"),
+        }
     }
 }
 
@@ -35,8 +35,8 @@ impl FakeGenerator {
         delay_minutes: i64,
         status: RealtimeStopStatus,
     ) -> RealtimeStop {
-        let aimed = self.base_date + chrono::Duration::minutes(minutes_offset);
-        let expected = aimed + chrono::Duration::minutes(delay_minutes);
+        let aimed = self.base_date + SignedDuration::from_mins(minutes_offset);
+        let expected = aimed + SignedDuration::from_mins(delay_minutes);
 
         RealtimeStop {
             expected_arrival: expected,
@@ -53,10 +53,11 @@ impl FakeGenerator {
         stop_name: &str,
         stop_id: &str,
     ) -> StopTime {
-        let time_with_offset = self.base_date + chrono::Duration::minutes(minutes_offset);
+        let time_with_offset = self.base_date + SignedDuration::from_mins(minutes_offset);
+        let time = time_with_offset.to_zoned(self.tz.clone()).time();
 
         StopTime {
-            time: time_with_offset.time(),
+            time,
             stop_name: stop_name.to_string(),
             stop_id: stop_id.to_string(),
         }
@@ -70,10 +71,11 @@ impl FakeGenerator {
         stop_id: &str,
         destination: &str,
     ) -> StopTimeWithDestination {
-        let time_with_offset = self.base_date + chrono::Duration::minutes(minutes_offset);
+        let time_with_offset = self.base_date + SignedDuration::from_mins(minutes_offset);
+        let time = time_with_offset.to_zoned(self.tz.clone()).time();
 
         StopTimeWithDestination {
-            time: time_with_offset.time(),
+            time,
             stop_name: stop_name.to_string(),
             stop_id: stop_id.to_string(),
             destination: destination.to_string(),

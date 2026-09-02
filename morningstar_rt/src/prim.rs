@@ -1,9 +1,9 @@
 use crate::{RealtimeStop, RealtimeStopStatus};
-use chrono::{DateTime, Timelike, Utc, prelude::*};
+use jiff::Timestamp;
 
-const PRIM_STOP_ID_PREFIX: &'static str = "STIF:StopPoint:Q:";
-const PRIM_STOP_ID_SUFFIX: &'static str = ":";
-const GTFS_STOP_ID_PREFIX: &'static str = "IDFM:";
+const PRIM_STOP_ID_PREFIX: &str = "STIF:StopPoint:Q:";
+const PRIM_STOP_ID_SUFFIX: &str = ":";
+const GTFS_STOP_ID_PREFIX: &str = "IDFM:";
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct StopId(String);
@@ -57,6 +57,37 @@ mod test_stop_id {
         assert_eq!(stop_id.prim(), "STIF:StopPoint:Q:1234:");
         assert_eq!(stop_id.bare(), "1234");
     }
+
+    #[test]
+    fn parses_realtime_offset_timestamps_as_instants() {
+        let json = serde_json::json!({
+            "Siri": {
+                "ServiceDelivery": {
+                    "StopMonitoringDelivery": [{
+                        "MonitoredStopVisit": [{
+                            "MonitoredVehicleJourney": {
+                                "DestinationName": [{ "value": "Gare" }],
+                                "MonitoredCall": {
+                                    "ExpectedArrivalTime": "2024-10-27T02:35:00+02:00",
+                                    "AimedArrivalTime": "2024-10-27T02:30:00+02:00"
+                                }
+                            }
+                        }]
+                    }]
+                }
+            }
+        });
+
+        let stops = super::parse_bus_info(json).unwrap();
+
+        assert_eq!(stops.len(), 1);
+        assert_eq!(stops[0].aimed_arrival.to_string(), "2024-10-27T00:30:00Z");
+        assert_eq!(
+            stops[0].expected_arrival.to_string(),
+            "2024-10-27T00:35:00Z"
+        );
+        assert_eq!(stops[0].status.to_string(), "late by 5'");
+    }
 }
 
 impl std::fmt::Display for StopId {
@@ -92,9 +123,8 @@ pub struct IdfmPrimClient {
     api_key: String,
     api_base_url: &'static str,
     api_client: reqwest::Client,
-    stop_monitoring_cache: std::sync::RwLock<
-        std::collections::HashMap<StopId, (chrono::DateTime<Utc>, Vec<RealtimeStop>)>,
-    >,
+    stop_monitoring_cache:
+        std::sync::RwLock<std::collections::HashMap<StopId, (Timestamp, Vec<RealtimeStop>)>>,
 }
 
 impl IdfmPrimClient {
@@ -114,11 +144,11 @@ impl IdfmPrimClient {
             &stop_id,
         )
         .and_then(|(date, stops)| {
-            let delta = Utc::now() - *date;
-            if delta.num_seconds() <= 20 {
+            let delta = Timestamp::now().duration_since(*date);
+            if delta.as_secs() <= 20 {
                 println!(
                     "INFO: used {} seconds old cache for {}",
-                    delta.num_seconds(),
+                    delta.as_secs(),
                     stop_id.bare()
                 );
                 Some(stops.clone())
@@ -132,7 +162,7 @@ impl IdfmPrimClient {
         let response_body = self.api_rq_stop_monitoring(&stop_id).await?;
         let buses = parse_bus_info(response_body)?;
         let mut cache = std::sync::RwLock::write(&self.stop_monitoring_cache).unwrap();
-        cache.insert(stop_id, (Utc::now(), buses.clone()));
+        cache.insert(stop_id, (Timestamp::now(), buses.clone()));
         Ok(buses)
     }
 
@@ -186,14 +216,15 @@ pub fn parse_bus_info(json_value: serde_json::Value) -> anyhow::Result<Vec<Realt
                     let expected_arrival = call["ExpectedArrivalTime"]
                         .as_str()
                         .unwrap_or_default()
-                        .parse::<DateTime<chrono::FixedOffset>>()?;
+                        .parse::<Timestamp>()?;
 
                     let aimed_arrival = call["AimedArrivalTime"]
                         .as_str()
                         .unwrap_or_default()
-                        .parse::<DateTime<chrono::FixedOffset>>()?;
+                        .parse::<Timestamp>()?;
 
-                    let aimed_expected_minutes = (expected_arrival - aimed_arrival).num_minutes();
+                    let aimed_expected_minutes =
+                        expected_arrival.duration_since(aimed_arrival).as_mins();
 
                     let status = if aimed_expected_minutes == 0 {
                         RealtimeStopStatus::OnTime
