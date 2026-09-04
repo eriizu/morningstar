@@ -45,11 +45,11 @@ impl DatetimeMaker {
 #[derive(Debug, serde::Serialize)]
 pub struct StopTimeDto {
     /// Real-time estimated call time from Siri.
-    #[serde(serialize_with = "serialize_optional_zoned_as_offset_datetime")]
+    // #[serde(serialize_with = "serialize_optional_zoned_as_offset_datetime")]
     pub expected_arrival: Option<Zoned>,
 
     /// Theorical call time from GTFS.
-    #[serde(serialize_with = "serialize_zoned_as_offset_datetime")]
+    // #[serde(serialize_with = "serialize_zoned_as_offset_datetime")]
     pub aimed_arrival: Zoned,
 
     /// Destination (usually generated from Siri)

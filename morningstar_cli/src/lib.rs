@@ -1,3 +1,5 @@
+pub mod rt;
+
 pub fn get_best_matching_stop_name(stop_name: &str, stops: Vec<&str>) -> Option<String> {
     use fuse_rust::Fuse;
     let fuse = Fuse::default();

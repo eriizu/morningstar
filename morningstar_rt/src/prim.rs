@@ -231,7 +231,7 @@ pub fn parse_bus_info(json_value: serde_json::Value) -> anyhow::Result<Vec<Realt
                     } else if aimed_expected_minutes > 0 {
                         RealtimeStopStatus::Late(aimed_expected_minutes)
                     } else if expected_arrival < aimed_arrival {
-                        RealtimeStopStatus::Early(aimed_expected_minutes)
+                        RealtimeStopStatus::Early(aimed_expected_minutes.abs())
                     } else {
                         call["ArrivalStatus"]
                             .as_str()
