@@ -1,6 +1,6 @@
 pub mod rt;
 
-pub fn get_best_matching_stop_name(stop_name: &str, stops: Vec<&str>) -> Option<String> {
+pub fn get_best_matching_stop_name(stop_name: &str, stops: &[&str]) -> Option<String> {
     use fuse_rust::Fuse;
     let fuse = Fuse::default();
     let results = fuse.search_text_in_iterable(stop_name, stops.iter());
