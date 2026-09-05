@@ -15,9 +15,9 @@ pub struct DatetimeMaker {
 
 impl DatetimeMaker {
     /// Create a DatetimeMaker
-    pub fn new(tz_name: &str) -> Option<Self> {
-        let tz = TimeZone::get(tz_name).ok()?;
-        Some(Self { tz })
+    pub fn new(tz_name: &str) -> Result<Self, StateError> {
+        let tz = TimeZone::get(tz_name).map_err(|err| StateError::TimezoneNonExistent(err))?;
+        Ok(Self { tz })
     }
 
     /// Generate a timestamp using the provided civil time and the current date in this timezone.
@@ -146,6 +146,16 @@ impl std::fmt::Display for StopTimeDto {
 
 use tokio::sync::RwLock;
 
+#[derive(thiserror::Error, Debug)]
+pub enum StateError {
+    #[error("stop not served or does not exist")]
+    StopNotServed,
+    #[error("querying the PRIM for realtime data: {_0}")]
+    Prim(anyhow::Error),
+    #[error("timezone does not exist: {_0}")]
+    TimezoneNonExistent(jiff::Error),
+}
+
 pub struct MorningstarState {
     pub timetable: RwLock<TimeTable>,
     pub prim_client: IdfmPrimClient,
@@ -153,14 +163,14 @@ pub struct MorningstarState {
 }
 
 impl MorningstarState {
-    pub fn new(timetable: TimeTable, prim_client: IdfmPrimClient) -> Self {
+    pub fn new(timetable: TimeTable, prim_client: IdfmPrimClient) -> Result<Self, StateError> {
         println!("timetable timezone {}", timetable.timezone.as_str());
-        let dt_maker = DatetimeMaker::new(timetable.timezone.as_str()).unwrap();
-        Self {
+        let dt_maker = DatetimeMaker::new(timetable.timezone.as_str())?;
+        Ok(Self {
             dt_maker,
             prim_client,
             timetable: RwLock::new(timetable),
-        }
+        })
     }
 
     pub fn today(&self) -> jiff::civil::Date {
@@ -177,7 +187,7 @@ impl MorningstarState {
         dtos.iter().for_each(|dto| println!("{dto}"));
     }
 
-    pub async fn next_stops_a(&self, stop_name: &str) -> Vec<StopTimeDto> {
+    pub async fn next_stops_a(&self, stop_name: &str) -> Result<Vec<StopTimeDto>, StateError> {
         let today = self.today();
         let stoptimes_theorical: Vec<_> = {
             let timetable = self.timetable.read().await;
@@ -185,13 +195,21 @@ impl MorningstarState {
                 .get_day_stoptimes_and_destination_for_stop(&today, stop_name)
                 .collect()
         };
-        let stop_id = stoptimes_theorical.last().unwrap().stop_id.as_str();
-        let stoptimes_realtime = self.prim_client.get_next_busses(stop_id).await.unwrap();
+        let stop_id = stoptimes_theorical
+            .last()
+            .ok_or(StateError::StopNotServed)?
+            .stop_id
+            .as_str();
+        let stoptimes_realtime = self
+            .prim_client
+            .get_next_busses(stop_id)
+            .await
+            .map_err(|err| StateError::Prim(err))?;
         let dtos = self
             .mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical)
             .await;
         dtos.iter().for_each(|dto| println!("{dto}"));
-        dtos
+        Ok(dtos)
     }
 
     async fn mk_stoptime_dto_vec(

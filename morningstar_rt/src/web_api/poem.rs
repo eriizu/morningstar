@@ -24,9 +24,15 @@ async fn served_stops(Data(state): Data<&std::sync::Arc<MorningstarState>>) -> J
 async fn hdl_stoptimes(
     Data(state): Data<&std::sync::Arc<MorningstarState>>,
     Path(stop_name): Path<String>,
-) -> Json<Vec<StopTimeDto>> {
-    let stoptimes = state.next_stops_a(&stop_name).await;
-    Json(stoptimes)
+) -> Result<Json<Vec<StopTimeDto>>, poem::http::StatusCode> {
+    match state.next_stops_a(&stop_name).await {
+        Ok(stoptimes) => Ok(Json(stoptimes)),
+        Err(super::StateError::StopNotServed) => Err(poem::http::StatusCode::NOT_FOUND),
+        Err(err) => {
+            eprintln!("{err}");
+            Err(poem::http::StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 pub async fn web_server(state: std::sync::Arc<MorningstarState>) -> anyhow::Result<()> {
