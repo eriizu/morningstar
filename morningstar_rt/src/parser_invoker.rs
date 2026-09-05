@@ -39,6 +39,10 @@ impl std::fmt::Display for Invoker {
 }
 
 impl Invoker {
+    #[tracing::instrument(
+        skip(self),
+        fields(route_id = %self.route_id, path = %self.timetable_dest.display())
+    )]
     pub async fn run(&self) -> InvokerResult<morningstar_model::TimeTable> {
         let child_process = self.spawn("morningstar_parser").await?;
         Self::await_child(child_process).await?;
@@ -109,10 +113,18 @@ impl Invoker {
         file_path: std::path::PathBuf,
     ) -> InvokerResult<morningstar_model::TimeTable> {
         tracing::debug!(path = %file_path.display(), "Spawning timetable deserialisation task");
-        let task = tokio::task::spawn_blocking(move || Self::ingest_file_sync(file_path));
+        let span = tracing::Span::current();
+        let task = tokio::task::spawn_blocking(move || {
+            span.in_scope(|| Self::ingest_file_sync(file_path))
+        });
         task.await.map_err(|err| Error::FileProcessingTask(err))?
     }
 
+    #[tracing::instrument(
+        level = "debug",
+        skip(file_path),
+        fields(path = %file_path.display())
+    )]
     fn ingest_file_sync(
         file_path: std::path::PathBuf,
     ) -> InvokerResult<morningstar_model::TimeTable> {

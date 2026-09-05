@@ -188,6 +188,7 @@ impl MorningstarState {
             .for_each(|dto| tracing::trace!(stop_time = %dto, "Computed stop time"));
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     pub async fn next_stops_a(&self, stop_name: &str) -> Result<Vec<StopTimeDto>, StateError> {
         let today = self.today();
         let stoptimes_theorical: Vec<_> = {

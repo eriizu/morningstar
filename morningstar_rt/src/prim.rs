@@ -137,6 +137,7 @@ impl IdfmPrimClient {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     pub async fn get_next_busses(&self, stop_id: &str) -> anyhow::Result<Vec<RealtimeStop>> {
         let stop_id = stop_id.parse::<StopId>()?;
         let cached = std::collections::HashMap::get(
@@ -166,6 +167,7 @@ impl IdfmPrimClient {
         Ok(buses)
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     pub async fn api_rq_stop_monitoring(
         &self,
         stop_id: &StopId,

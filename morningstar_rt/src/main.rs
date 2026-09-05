@@ -19,6 +19,7 @@ async fn main() -> anyhow::Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .with_writer(std::io::stderr)
+        .pretty()
         .init();
     if let Err(err) = dotenv_result {
         tracing::debug!(error = %err, "Could not load .env file");
