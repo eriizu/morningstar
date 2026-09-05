@@ -164,7 +164,7 @@ pub struct MorningstarState {
 
 impl MorningstarState {
     pub fn new(timetable: TimeTable, prim_client: IdfmPrimClient) -> Result<Self, StateError> {
-        println!("timetable timezone {}", timetable.timezone.as_str());
+        tracing::info!(timezone = %timetable.timezone, "Loading timetable");
         let dt_maker = DatetimeMaker::new(timetable.timezone.as_str())?;
         Ok(Self {
             dt_maker,
@@ -184,7 +184,8 @@ impl MorningstarState {
         let dtos = self
             .mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical)
             .await;
-        dtos.iter().for_each(|dto| println!("{dto}"));
+        dtos.iter()
+            .for_each(|dto| tracing::trace!(stop_time = %dto, "Computed stop time"));
     }
 
     pub async fn next_stops_a(&self, stop_name: &str) -> Result<Vec<StopTimeDto>, StateError> {
@@ -208,7 +209,8 @@ impl MorningstarState {
         let dtos = self
             .mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical)
             .await;
-        dtos.iter().for_each(|dto| println!("{dto}"));
+        dtos.iter()
+            .for_each(|dto| tracing::trace!(stop_time = %dto, "Computed stop time"));
         Ok(dtos)
     }
 
@@ -224,9 +226,9 @@ impl MorningstarState {
                     .make_datetime_with_time_and_tz(stoptime_theorical.time)
                     .map(|datetime| (stoptime_theorical, datetime))
                     .or_else(|| {
-                        eprintln!(
-                            "stop time {} doesn't exist in destination timezone.",
-                            stoptime_theorical.time
+                        tracing::warn!(
+                            stop_time = %stoptime_theorical.time,
+                            "Stop time does not exist in destination timezone"
                         );
                         None
                     })
@@ -289,8 +291,12 @@ pub async fn timetable_update_on_expiry(
                 route_id: extracted_line_id,
                 timetable_dest: file_path.to_path_buf(),
             };
-            println!("STARTING PARSING (i will eat a lot of your ram am sorry (,,>﹏<,,))");
-            println!("{}", parser_invoker);
+            tracing::info!(
+                gtfs_source = %parser_invoker.gtfs_source,
+                route_id = %parser_invoker.route_id,
+                timetable_dest = %parser_invoker.timetable_dest.display(),
+                "STARTING PARSING (i will eat a lot of your ram am sorry (,,>﹏<,,))"
+            );
             if let Ok(val) = parser_invoker.run().await {
                 extracted_on = val.extracted_on;
                 *state.timetable.write().await = val;
@@ -298,12 +304,10 @@ pub async fn timetable_update_on_expiry(
         }
         let deadline = extracted_on + deadline_duration;
         let delta = deadline.duration_since(Timestamp::now());
-        println!(
-            "I will invoke GTFS parsing on {} in {} days {} hours {} minutes.",
-            deadline,
-            delta.as_hours() / 24,
-            delta.as_hours() % 24,
-            delta.as_mins() % 60,
+        tracing::info!(
+            %deadline,
+            remaining_seconds = delta.as_secs(),
+            "I will invoke GTFS parsing on deadline"
         );
         let deadline_instant = mk_instant_for_deadline(deadline);
         tokio::time::sleep_until(deadline_instant).await;

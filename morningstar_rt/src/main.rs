@@ -13,8 +13,15 @@ struct Opt {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
-    if let Err(err) = dotenvy::dotenv() {
-        eprintln!("dotenv: {err}");
+    let dotenv_result = dotenvy::dotenv();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
+        .with_writer(std::io::stderr)
+        .init();
+    if let Err(err) = dotenv_result {
+        tracing::debug!(error = %err, "Could not load .env file");
     }
     let prim_client =
         morningstar_rt::IdfmPrimClient::new(std::env::var("API_KEY").context("API_KEY env var")?);

@@ -29,7 +29,7 @@ async fn hdl_stoptimes(
         Ok(stoptimes) => Ok(Json(stoptimes)),
         Err(super::StateError::StopNotServed) => Err(poem::http::StatusCode::NOT_FOUND),
         Err(err) => {
-            eprintln!("{err}");
+            tracing::error!(error = %err, %stop_name, "Failed to get stop times");
             Err(poem::http::StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -43,6 +43,7 @@ pub async fn web_server(state: std::sync::Arc<MorningstarState>) -> anyhow::Resu
         .at("/served_today", get(served_stops))
         .at("/stop/:name", get(hdl_stoptimes))
         .with(cors)
+        .with(poem::middleware::Tracing)
         .data(state);
     Ok(Server::new(TcpListener::bind("0.0.0.0:3000"))
         .run(routes)

@@ -146,10 +146,10 @@ impl IdfmPrimClient {
         .and_then(|(date, stops)| {
             let delta = Timestamp::now().duration_since(*date);
             if delta.as_secs() <= 20 {
-                println!(
-                    "INFO: used {} seconds old cache for {}",
-                    delta.as_secs(),
-                    stop_id.bare()
+                tracing::debug!(
+                    cache_age_seconds = delta.as_secs(),
+                    stop_id = %stop_id,
+                    "Using cached realtime stops"
                 );
                 Some(stops.clone())
             } else {
@@ -212,7 +212,7 @@ pub fn parse_bus_info(json_value: serde_json::Value) -> anyhow::Result<Vec<Realt
                         .to_string();
 
                     let expected_arrival = call["ExpectedArrivalTime"].as_str().unwrap_or_default();
-                    println!("expected {}", expected_arrival);
+                    tracing::trace!(expected_arrival, "Parsing expected arrival");
                     let expected_arrival = call["ExpectedArrivalTime"]
                         .as_str()
                         .unwrap_or_default()
