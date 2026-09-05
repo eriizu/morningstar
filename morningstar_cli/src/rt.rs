@@ -18,28 +18,29 @@ pub struct StopTimeDto {
 
 impl std::fmt::Display for StopTimeDto {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let time_and_details = self
+        let arrival_time = self
             .expected_arrival
             .as_ref()
-            .map(|val| {
-                let time = val.strftime("%H:%M:%S").to_string();
-                // let delta = jiff::Timestamp::now().until(val).unwrap().get_minutes();
-                let delta = jiff::Timestamp::now()
-                    .to_zoned(val.time_zone().clone())
-                    .until(val)
-                    .unwrap();
-                let delta_secs = delta.get_seconds();
-                let delta_mins = delta.get_minutes();
-                self.status
-                    .as_ref()
-                    .map(|status| format!("{delta_mins:02}m {delta_secs:02}s -- {time} ({status})"))
-                    .unwrap_or(time)
+            .unwrap_or(&self.aimed_arrival);
+
+        let time_str = arrival_time.strftime("%H:%M:%S").to_string();
+        let in_min_sec = jiff::Timestamp::now()
+            .to_zoned(arrival_time.time_zone().clone())
+            .until(arrival_time)
+            .map(|delta| {
+                format!(
+                    "{:02}m {:02}s -- ",
+                    delta.get_minutes(),
+                    delta.get_seconds()
+                )
             })
-            .unwrap_or_else(|| {
-                self.aimed_arrival
-                    .strftime("%H:%M:%S (theorical)")
-                    .to_string()
-            });
+            .unwrap_or_default();
+        let status = self
+            .status
+            .as_ref()
+            .map(|status| format!(" ({status})"))
+            .unwrap_or_default();
+        let time_and_details = format!("{in_min_sec}{time_str}{status}");
         write!(f, "{}", time_and_details)
     }
 }

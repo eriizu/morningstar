@@ -2,34 +2,49 @@ use jiff::{civil::Time, Zoned};
 
 #[derive(clap::Parser)]
 struct Opt {
-    depart_from: Option<String>,
-    // go_to: Option<String>,
-    number_to_show: Option<usize>,
-
-    #[arg(short, long)]
-    verbose: bool,
-
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(clap::Subcommand)]
 enum Commands {
-    File {
-        #[arg(short, long)]
-        file: std::path::PathBuf,
-    },
-    RealTime {
-        #[arg(short, long)]
-        server: String,
-    },
+    File(FileArgs),
+    RealTime(RealTimeArgs),
+}
+
+#[derive(clap::Args)]
+struct FileArgs {
+    #[arg(short, long)]
+    file: std::path::PathBuf,
+
+    depart_from: Option<String>,
+
+    #[arg(short, long)]
+    number_to_show: Option<usize>,
+
+    #[arg(short, long)]
+    verbose: bool,
+}
+
+#[derive(clap::Args)]
+struct RealTimeArgs {
+    #[arg(short, long)]
+    server: String,
+
+    depart_from: Option<String>,
+
+    #[arg(short, long)]
+    number_to_show: Option<usize>,
+
+    #[arg(short, long)]
+    verbose: bool,
 }
 
 impl Opt {
     async fn run(&self) {
         let res = match self.command {
-            Commands::File { ref file } => self.file(file),
-            Commands::RealTime { ref server } => self.realtime(server).await,
+            Commands::File(ref args) => self.file(args),
+            Commands::RealTime(ref args) => self.realtime(args).await,
         };
 
         match res {
@@ -38,9 +53,9 @@ impl Opt {
         }
     }
 
-    fn file(&self, file_path: &std::path::Path) -> Result<(), PotatoError> {
+    fn file(&self, args: &FileArgs) -> Result<(), PotatoError> {
         let tt = {
-            let file = std::fs::File::open(file_path)?;
+            let file = std::fs::File::open(&args.file)?;
             let mut tt: morningstar_model::TimeTable = ron::de::from_reader(file)?;
             tt.sort_journeys_and_stops();
             tt
@@ -49,7 +64,7 @@ impl Opt {
             let now = Zoned::now();
             (now.date(), now.time())
         };
-        if self.verbose {
+        if args.verbose {
             println!(
                 "source file or url: {}\ncreated on: {}\nline id: {}",
                 tt.extracted_from,
@@ -72,8 +87,8 @@ impl Opt {
         Ok(())
     }
 
-    async fn realtime(&self, server: &str) -> Result<(), PotatoError> {
-        let rt_service = morningstar_cli::rt::MorningstarRtService::new(server.to_owned());
+    async fn realtime(&self, args: &RealTimeArgs) -> Result<(), PotatoError> {
+        let rt_service = morningstar_cli::rt::MorningstarRtService::new(args.server.to_owned());
         let served_today = rt_service.get_served_today().await?;
         if served_today.is_empty() {
             return Err(PotatoError::NoStopsServed);
@@ -106,12 +121,34 @@ impl Opt {
     }
 
     fn get_departure_stop(&self, stops: Vec<&str>) -> Result<String, PotatoError> {
-        self.depart_from
+        self.depart_from()
             .as_deref()
             .and_then(|depart_from| {
                 morningstar_cli::get_best_matching_stop_name(depart_from, &stops)
             })
             .map_or_else(|| ask_for_deperture_stop(stops), Ok)
+    }
+
+    fn depart_from(&self) -> &Option<String> {
+        match self.command {
+            Commands::File(FileArgs {
+                ref depart_from, ..
+            }) => depart_from,
+            Commands::RealTime(RealTimeArgs {
+                ref depart_from, ..
+            }) => depart_from,
+        }
+    }
+
+    fn number_to_show(&self) -> &Option<usize> {
+        match self.command {
+            Commands::File(FileArgs {
+                ref number_to_show, ..
+            }) => number_to_show,
+            Commands::RealTime(RealTimeArgs {
+                ref number_to_show, ..
+            }) => number_to_show,
+        }
     }
 }
 
@@ -163,7 +200,7 @@ where
                 true
             }
         })
-        .take(opt.number_to_show.unwrap_or(3))
+        .take(opt.number_to_show().unwrap_or(3))
         .for_each(|(_, a)| {
             print!("{:02}:{:02}, ", a.time.hour(), a.time.minute(),);
         });
