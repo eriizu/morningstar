@@ -1,4 +1,4 @@
-FROM rust:1.93-slim AS builder
+FROM rust:1.98-slim AS builder
 
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
@@ -33,5 +33,7 @@ COPY --from=builder /build/morningstar_rt/target/release/morningstar_rt /usr/loc
 COPY --from=builder /build/morningstar_parser/target/release/morningstar_parser /usr/local/bin/morningstar_parser
 
 EXPOSE 3000
+
+WORKDIR /usr/local/share/morningstar_parser
 
 ENTRYPOINT ["morningstar_rt"]
