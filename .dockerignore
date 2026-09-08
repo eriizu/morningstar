@@ -1,0 +1,19 @@
+# Repository metadata and local tooling
+**/.git
+.agents
+.claude
+.codex
+**/.idea
+**/.vscode
+
+# Build artifacts and installed dependencies
+**/target
+**/node_modules
+**/dist
+
+# Local secrets and generated runtime data
+**/.env
+**/.env.*
+**/tt.ron
+/timetable.ron
+**/*.log
