@@ -45,7 +45,7 @@ pub async fn web_server(state: std::sync::Arc<MorningstarState>) -> anyhow::Resu
         .with(cors)
         .with(poem::middleware::Tracing)
         .data(state);
-    Ok(Server::new(TcpListener::bind("0.0.0.0:3000"))
+    Ok(Server::new(TcpListener::bind(":::3000"))
         .run(routes)
         .await?)
 }
