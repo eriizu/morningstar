@@ -2,10 +2,15 @@ services:
   rt:
     build: .
     environment:
-      API_KEY: AAA
+      API_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      RUST_LOG: poem=info,morningstar_rt=info
     restart: on-failure
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.ms-rt.rule=Host(`bus.example.fr`)"
+      - "traefik.http.routers.ms-rt.rule=Host(`ms-rt.microslop.fr`)"
       - "traefik.http.routers.ms-rt.entrypoints=websecure"
-      - "traefik.http.routers.ms-rt.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ms-rt.tls.certresolver=le"
+      - "traefik.http.middlewares.ms-rt-ratelimit.ratelimit.average=300"
+      - "traefik.http.middlewares.ms-rt-ratelimit.ratelimit.period=10s"
+      - "traefik.http.middlewares.ms-rt-ratelimit.ratelimit.burst=200"
+      - "traefik.http.routers.ms-rt.middlewares=ms-rt-ratelimit@docker"

@@ -14,3 +14,11 @@ cd ../morningstar_cli
 cargo buld --release
 ./target/release/morningstar_cli
 ```
+
+# Realtime server logging
+
+`morningstar_rt` writes tracing logs to stderr, with info-level events enabled by
+default. Set `RUST_LOG=morningstar_rt=debug` for cache and parser diagnostics, or
+`RUST_LOG=morningstar_rt=trace` to include individual stop times. The server also
+reads `RUST_LOG` from `.env`. Parser subprocess stdout is logged at debug level
+and stderr at warn level.
