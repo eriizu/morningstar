@@ -150,8 +150,6 @@ use tokio::sync::RwLock;
 pub enum StateError {
     #[error("stop not served or does not exist")]
     StopNotServed,
-    #[error("querying the PRIM for realtime data: {_0}")]
-    Prim(anyhow::Error),
     #[error("timezone does not exist: {_0}")]
     TimezoneNonExistent(jiff::Error),
 }
@@ -203,11 +201,18 @@ impl MorningstarState {
             .ok_or(StateError::StopNotServed)?
             .stop_id
             .as_str();
-        let stoptimes_realtime = self
-            .prim_client
-            .get_next_busses(stop_id)
-            .await
-            .map_err(|err| StateError::Prim(err))?;
+        let stoptimes_realtime = match self.prim_client.get_next_busses(stop_id).await {
+            Ok(report) => {
+                for issue in &report.issues {
+                    tracing::warn!(%stop_id, %issue, rejected_entry = %issue.entry, "Rejected PRIM realtime entry");
+                }
+                report.stops
+            }
+            Err(error) => {
+                tracing::warn!(%stop_id, %error, "PRIM unavailable; returning scheduled times");
+                Vec::new()
+            }
+        };
         let dtos = self
             .mk_stoptime_dto_vec(&stoptimes_realtime, &stoptimes_theorical)
             .await;
@@ -385,5 +390,104 @@ mod tests {
 
         assert_eq!(json["aimed_arrival"], "2024-10-27T02:30:00+02:00");
         assert!(json["expected_arrival"].is_null());
+    }
+
+    fn timetable_for_today() -> TimeTable {
+        use morningstar_model::{Exception, Journey, ServiceException, StopTime};
+        let mut timetable = TimeTable::new();
+        let today = DatetimeMaker::new("Europe/Paris").unwrap().today();
+        timetable.excpetions.insert(
+            "today".into(),
+            ServiceException {
+                date: today,
+                exception_type: Exception::Added,
+            },
+        );
+        for hour in [12, 13] {
+            timetable.journeys.push(Journey {
+                service_id: "today".into(),
+                stops: vec![
+                    StopTime {
+                        time: time(hour, 0, 0, 0),
+                        stop_name: "Église".into(),
+                        stop_id: "IDFM:1234".into(),
+                    },
+                    StopTime {
+                        time: time(hour, 10, 0, 0),
+                        stop_name: "Gare".into(),
+                        stop_id: "IDFM:5678".into(),
+                    },
+                ],
+            });
+        }
+        timetable
+    }
+
+    #[tokio::test]
+    async fn returns_scheduled_times_when_prim_is_unavailable_or_rejects_all_entries() {
+        use crate::prim::test_support::{envelope, mock_prim};
+        use std::time::Duration;
+        for (status, body, delay) in [
+            (404, "missing".into(), Duration::ZERO),
+            (503, "unavailable".into(), Duration::ZERO),
+            (0, String::new(), Duration::ZERO),
+            (200, "invalid json".into(), Duration::ZERO),
+            (200, "{}".into(), Duration::ZERO),
+            (200, "{}".into(), Duration::from_secs(1)),
+            (
+                200,
+                envelope(serde_json::json!([{ "MonitoredStopVisit": [{}] }])).to_string(),
+                Duration::ZERO,
+            ),
+        ] {
+            let (client, _server) =
+                mock_prim(status, body, delay, Duration::from_millis(100)).await;
+            let state = MorningstarState::new(timetable_for_today(), client).unwrap();
+            let dtos = state.next_stops_a("Église").await.unwrap();
+            assert_eq!(dtos.len(), 2);
+            for (dto, hour) in dtos.iter().zip([12, 13]) {
+                assert_eq!(dto.aimed_arrival.hour(), hour);
+                assert_eq!(dto.destination.as_deref(), Some("Gare"));
+                assert!(dto.expected_arrival.is_none());
+                assert!(dto.status.is_none());
+            }
+            assert!(matches!(
+                state.next_stops_a("Unknown stop").await,
+                Err(StateError::StopNotServed)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn enriches_valid_departures_and_keeps_the_rest_scheduled() {
+        use crate::prim::test_support::{envelope, mock_prim, visit};
+        use std::time::Duration;
+        let maker = DatetimeMaker::new("Europe/Paris").unwrap();
+        let aimed = maker
+            .make_datetime_with_time_and_tz(time(12, 0, 0, 0))
+            .unwrap()
+            .timestamp();
+        let expected = aimed + SignedDuration::from_mins(5);
+        let body = envelope(serde_json::json!([{ "MonitoredStopVisit": [
+            visit(&aimed.to_string(), &expected.to_string()),
+            visit("invalid", "invalid")
+        ] }]));
+        let (client, _server) = mock_prim(
+            200,
+            body.to_string(),
+            Duration::ZERO,
+            Duration::from_secs(1),
+        )
+        .await;
+        let state = MorningstarState::new(timetable_for_today(), client).unwrap();
+        let dtos = state.next_stops_a("Église").await.unwrap();
+        assert_eq!(dtos.len(), 2);
+        assert_eq!(
+            dtos[0].expected_arrival.as_ref().unwrap().timestamp(),
+            expected
+        );
+        assert_eq!(dtos[0].status.as_deref(), Some("late by 5'"));
+        assert!(dtos[1].expected_arrival.is_none());
+        assert_eq!(dtos[1].aimed_arrival.hour(), 13);
     }
 }

@@ -5,7 +5,10 @@ async fn print_next_busses(
     let buses = client.get_next_busses(id).await?;
 
     println!("At bus stop {}:", id);
-    for bus in buses {
+    for issue in &buses.issues {
+        eprintln!("Skipped realtime entry: {issue}; JSON: {}", issue.entry);
+    }
+    for bus in buses.stops {
         println!("{}", bus);
     }
 

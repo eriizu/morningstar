@@ -1,7 +1,7 @@
 pub mod mock;
 mod prim;
 use jiff::{Timestamp, tz::TimeZone};
-pub use prim::{IdfmPrimClient, StopId};
+pub use prim::{IdfmPrimClient, ParseIssue, PrimError, RealtimeReport, StopId};
 pub mod parser_invoker;
 pub mod web_api;
 
