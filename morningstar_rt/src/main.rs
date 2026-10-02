@@ -8,6 +8,9 @@ use std::str::FromStr;
 struct Opt {
     #[arg(short, long)]
     file: Option<std::path::PathBuf>,
+
+    #[arg(short, long)]
+    listen_addr: Option<String>,
 }
 
 #[tokio::main]
@@ -49,7 +52,10 @@ async fn main() -> anyhow::Result<()> {
         }
     };
     let state = std::sync::Arc::new(MorningstarState::new(timetable, prim_client)?);
-    let web_server_handle = tokio::spawn(web_server(state.clone()));
+    let web_server_handle = tokio::spawn(web_server(
+        state.clone(),
+        opt.listen_addr.unwrap_or(":::3000".to_string()),
+    ));
     let timetable_update_handle = tokio::spawn(timetable_update_on_expiry(state, file_path));
     web_server_handle.await??;
     timetable_update_handle.await?;

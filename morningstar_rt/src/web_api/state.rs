@@ -195,6 +195,7 @@ impl MorningstarState {
             let timetable = self.timetable.read().await;
             timetable
                 .get_day_stoptimes_and_destination_for_stop(&today, stop_name)
+                .filter(|stoptime| stoptime.stops_to_destination > 0)
                 .collect()
         };
         let stop_id = stoptimes_theorical
