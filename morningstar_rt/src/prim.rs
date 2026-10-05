@@ -5,6 +5,13 @@ const PRIM_STOP_ID_PREFIX: &str = "STIF:StopPoint:Q:";
 const PRIM_STOP_ID_SUFFIX: &str = ":";
 const GTFS_STOP_ID_PREFIX: &str = "IDFM:";
 
+/// How long a cached stop-monitoring response stays valid.
+const CACHE_TTL: jiff::SignedDuration = jiff::SignedDuration::from_secs(20);
+/// Shorter validity used while a bus is imminent, so the countdown stays accurate.
+const IMMINENT_CACHE_TTL: jiff::SignedDuration = jiff::SignedDuration::from_secs(2);
+/// A bus expected within this delay (or already past) is considered imminent.
+const IMMINENT_THRESHOLD: jiff::SignedDuration = jiff::SignedDuration::from_mins(1);
+
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct StopId(String);
 
@@ -153,6 +160,17 @@ pub struct RealtimeReport {
     pub issues: Vec<ParseIssue>,
 }
 
+impl RealtimeReport {
+    /// Cache validity, shortened when any bus is expected less than a minute from `now`.
+    fn cache_ttl(&self, now: Timestamp) -> jiff::SignedDuration {
+        let imminent = self
+            .stops
+            .iter()
+            .any(|stop| stop.expected_arrival.duration_since(now) < IMMINENT_THRESHOLD);
+        if imminent { IMMINENT_CACHE_TTL } else { CACHE_TTL }
+    }
+}
+
 /// Client for https://prim.iledefrance-mobilites.fr, on which you need an account to get an
 /// apikey.
 pub struct IdfmPrimClient {
@@ -186,8 +204,9 @@ impl IdfmPrimClient {
             .map_err(|_| PrimError::CacheUnavailable)?
             .get(&stop_id)
             .and_then(|(date, report)| {
-                let delta = Timestamp::now().duration_since(*date);
-                if delta.as_secs() <= 20 {
+                let now = Timestamp::now();
+                let delta = now.duration_since(*date);
+                if delta <= report.cache_ttl(now) {
                     tracing::debug!(cache_age_seconds = delta.as_secs(), %stop_id,
                         "Using cached realtime stops");
                     Some(report.clone())
@@ -610,5 +629,23 @@ mod tests {
             }
             assert_eq!(server.requests.load(Ordering::SeqCst), expected_requests);
         }
+    }
+
+    #[test]
+    fn cache_ttl_is_shortened_when_a_bus_is_imminent() {
+        let now: jiff::Timestamp = "2024-10-27T00:30:00Z".parse().unwrap();
+        let report_at = |offset_secs: i64| RealtimeReport {
+            stops: vec![crate::RealtimeStop {
+                expected_arrival: now + jiff::SignedDuration::from_secs(offset_secs),
+                aimed_arrival: now,
+                destination: "Gare".into(),
+                status: crate::RealtimeStopStatus::OnTime,
+            }],
+            issues: vec![],
+        };
+        assert_eq!(RealtimeReport::default().cache_ttl(now), CACHE_TTL);
+        assert_eq!(report_at(60).cache_ttl(now), CACHE_TTL);
+        assert_eq!(report_at(59).cache_ttl(now), IMMINENT_CACHE_TTL);
+        assert_eq!(report_at(-30).cache_ttl(now), IMMINENT_CACHE_TTL);
     }
 }
