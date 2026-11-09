@@ -167,13 +167,55 @@ impl RealtimeReport {
             .stops
             .iter()
             .any(|stop| stop.expected_arrival.duration_since(now) < IMMINENT_THRESHOLD);
-        if imminent { IMMINENT_CACHE_TTL } else { CACHE_TTL }
+        if imminent {
+            IMMINENT_CACHE_TTL
+        } else {
+            CACHE_TTL
+        }
+    }
+}
+
+/// Completed upstream lookups: retain the last hour OR the last ten samples.
+#[derive(Default)]
+struct RequestHistory(std::collections::VecDeque<(std::time::Instant, bool)>);
+
+#[derive(serde::Serialize)]
+pub(crate) struct PrimHealth {
+    pub healthy: bool,
+    pub requests: usize,
+    pub failures: usize,
+}
+
+impl RequestHistory {
+    fn prune(&mut self, now: std::time::Instant) {
+        while self.0.len() > 10
+            && now.duration_since(self.0.front().unwrap().0) > std::time::Duration::from_secs(3600)
+        {
+            self.0.pop_front();
+        }
+    }
+
+    fn record(&mut self, now: std::time::Instant, failed: bool) {
+        self.0.push_back((now, failed));
+        self.prune(now);
+    }
+
+    fn health(&mut self, now: std::time::Instant) -> PrimHealth {
+        self.prune(now);
+        let requests = self.0.len();
+        let failures = self.0.iter().filter(|(_, failed)| *failed).count();
+        PrimHealth {
+            healthy: failures <= requests / 2,
+            requests,
+            failures,
+        }
     }
 }
 
 /// Client for https://prim.iledefrance-mobilites.fr, on which you need an account to get an
 /// apikey.
 pub struct IdfmPrimClient {
+    request_history: std::sync::Mutex<RequestHistory>,
     api_key: String,
     api_base_url: String,
     api_client: reqwest::Client,
@@ -185,12 +227,20 @@ pub struct IdfmPrimClient {
 impl IdfmPrimClient {
     pub fn new(api_key: String) -> Self {
         Self {
+            request_history: Default::default(),
             api_key,
             api_base_url: "https://prim.iledefrance-mobilites.fr/marketplace".into(),
             api_client: reqwest::Client::new(),
             request_timeout: std::time::Duration::from_secs(5),
             stop_monitoring_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
+    }
+
+    pub(crate) fn health(&self) -> PrimHealth {
+        self.request_history
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .health(std::time::Instant::now())
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
@@ -217,8 +267,19 @@ impl IdfmPrimClient {
         if let Some(cached) = cached {
             return Ok(cached);
         }
-        let response_body = self.api_rq_stop_monitoring(&stop_id).await?;
-        let report = parse_bus_info(response_body)?;
+        let result = match self.api_rq_stop_monitoring(&stop_id).await {
+            Ok(body) => parse_bus_info(body),
+            Err(error) => Err(error),
+        };
+        let failed = match &result {
+            Ok(report) => report.stops.is_empty() && !report.issues.is_empty(),
+            Err(_) => true,
+        };
+        self.request_history
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .record(std::time::Instant::now(), failed);
+        let report = result?;
         // An entirely rejected response must not become a cached successful empty lookup.
         if !report.stops.is_empty() || report.issues.is_empty() {
             self.stop_monitoring_cache
@@ -592,6 +653,8 @@ mod tests {
             let (client, _server) =
                 mock_prim(status, body.into(), delay, Duration::from_millis(100)).await;
             let error = client.get_next_busses("1234").await.unwrap_err();
+            assert_eq!(client.health().failures, 1);
+            assert!(!client.health().healthy);
             match (status, body, delay.is_zero()) {
                 (404 | 503, _, _) => assert!(
                     matches!(error, PrimError::Http { status: actual } if actual.as_u16() == status)
@@ -628,6 +691,9 @@ mod tests {
                 assert_eq!(report.issues.len(), expected_issues);
             }
             assert_eq!(server.requests.load(Ordering::SeqCst), expected_requests);
+            let health = client.health();
+            assert_eq!(health.requests, expected_requests);
+            assert_eq!(health.healthy, expected_stops > 0 || expected_issues == 0);
         }
     }
 
@@ -647,5 +713,42 @@ mod tests {
         assert_eq!(report_at(60).cache_ttl(now), CACHE_TTL);
         assert_eq!(report_at(59).cache_ttl(now), IMMINENT_CACHE_TTL);
         assert_eq!(report_at(-30).cache_ttl(now), IMMINENT_CACHE_TTL);
+    }
+}
+
+#[cfg(test)]
+mod health_tests {
+    use super::RequestHistory;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn threshold_and_empty_history() {
+        let now = Instant::now();
+        let mut history = RequestHistory::default();
+        assert!(history.health(now).healthy);
+        history.record(now, true);
+        assert!(!history.health(now).healthy);
+        history.record(now, false);
+        assert!(history.health(now).healthy); // Exactly half is healthy.
+        history.record(now, true);
+        assert!(!history.health(now).healthy);
+    }
+
+    #[test]
+    fn retains_hour_or_last_ten_and_prunes_without_new_requests() {
+        let now = Instant::now();
+        let mut history = RequestHistory::default();
+        for _ in 0..15 {
+            history.record(now, true);
+        }
+        assert_eq!(history.health(now + Duration::from_secs(3600)).requests, 15);
+        assert_eq!(history.health(now + Duration::from_secs(3601)).requests, 10);
+        for _ in 0..10 {
+            history.record(now + Duration::from_secs(3602), false);
+        }
+        let health = history.health(now + Duration::from_secs(3602));
+        assert_eq!(health.requests, 10);
+        assert_eq!(health.failures, 0);
+        assert!(health.healthy);
     }
 }

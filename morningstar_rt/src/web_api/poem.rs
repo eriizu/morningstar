@@ -3,6 +3,18 @@ use super::StopTimeDto;
 use poem::web::{Data, Html, Json, Path};
 
 #[poem::handler]
+fn health(Data(state): Data<&std::sync::Arc<MorningstarState>>) -> poem::Response {
+    use poem::IntoResponse;
+    let health = state.prim_client.health();
+    let status = if health.healthy {
+        poem::http::StatusCode::OK
+    } else {
+        poem::http::StatusCode::SERVICE_UNAVAILABLE
+    };
+    Json(health).with_status(status).into_response()
+}
+
+#[poem::handler]
 fn index() -> Html<&'static str> {
     Html(include_str!("../../../morningstar_fe/index.html"))
 }
@@ -43,6 +55,7 @@ pub async fn web_server(
     let cors = Cors::new();
     let routes = Route::new()
         .at("/", get(index))
+        .at("/health", get(health))
         .at("/served_today", get(served_stops))
         .at("/stop/:name", get(hdl_stoptimes))
         .with(cors)

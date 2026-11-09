@@ -209,7 +209,7 @@ impl MorningstarState {
                 report.stops
             }
             Err(error) => {
-                tracing::warn!(%stop_id, %error, "PRIM unavailable; returning scheduled times");
+                tracing::warn!(%stop_id, error = ?error, "PRIM unavailable; returning scheduled times");
                 Vec::new()
             }
         };

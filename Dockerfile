@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # --- Runtime ---
 FROM debian:trixie-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libc6 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libc6 curl && rm -rf /var/lib/apt/lists/*
 
 # The parser writes and refreshes ./tt.ron in the working directory.
 RUN groupadd --gid 10001 morningstar \
@@ -45,5 +45,8 @@ EXPOSE 3000
 WORKDIR /usr/local/share/morningstar_parser
 
 USER 10001:10001
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl --fail --silent --show-error --noproxy '*' --max-time 4 http://127.0.0.1:3000/health || exit 1
 
 ENTRYPOINT ["morningstar_rt"]
